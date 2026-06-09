@@ -104,8 +104,9 @@ Written by the `claude` extension when Claude Code is detected on a pane.
 | `ext.claude.active` | boolean | — | True if a `claude`/`claude-code` process is attached to this pane's TTY |
 | `ext.claude.state` | string | `idle`, `running`, `attention`, `plan` | Current Claude session state |
 | `ext.claude.action_needed` | boolean | — | Derived: `true` iff `state == "attention"` |
+| `ext.claude.session_id` | string | — | Claude Code session UUID, used to resume the pane via `claude --resume`; empty until the first hook fires or if unknown |
 
-State transitions are driven by Claude Code hook signal files (see `hooks/notify.sh`). The `plan` state is detected via a narrow screen-scrape of the plan-mode banner.
+State transitions are driven by Claude Code hook signal files (see `hooks/notify.sh`). The `plan` state is detected via a narrow screen-scrape of the plan-mode banner. `ext.claude.session_id` is captured from the hook payload and consumed by the workspace-restore feature.
 
 ## Invariants
 

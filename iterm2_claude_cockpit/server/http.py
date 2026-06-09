@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import threading
+import time
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -26,12 +27,15 @@ import iterm2
 from extensions import _loader as ext_loader
 from extensions._api import Registry
 
-from . import actions, tree
+from . import actions, persistence, tree
 
 log = logging.getLogger("iterm2_claude_cockpit.http")
 
 WEBVIEW_DIR = Path(__file__).resolve().parent.parent / "webview"
 _PLUGIN_VERSION = "0.1.0"  # keep in sync with __init__.py and pyproject.toml
+
+# Minimum seconds between workspace-state writes (layout changes are debounced).
+_PERSIST_DEBOUNCE_SECONDS = 5.0
 
 _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -61,6 +65,23 @@ class State:
         # Set True while a structural write (e.g. move-tab) is in flight to prevent
         # layout-change notifications from flooding iTerm2 with concurrent reads.
         self.suppress_refresh: bool = False
+        # Workspace-state persistence: debounce bookkeeping (see refresh()).
+        self._last_persist_ts: float = 0.0
+        self._last_persisted_sig: str = ""
+        # Snapshot of the last saved workspace, loaded once at startup. Restore reads
+        # THIS in-memory copy, not the file: the rolling auto-save in refresh()
+        # overwrites the file with the current (post-restart, Claude-less) layout
+        # within ~1s of launch, so reading the file at restore time would return the
+        # degraded layout instead of the pre-close one we want to bring back.
+        self.restore_snapshot: dict[str, Any] | None = persistence.load_state()
+        # Seed in-memory metadata from it so custom tab names and buried positions
+        # survive a daemon restart (correct when iTerm2 stayed up; harmlessly ignored
+        # when its ids are stale after a full iTerm2 restart).
+        if self.restore_snapshot:
+            self.tab_names = {str(k): str(v) for k, v in (self.restore_snapshot.get("tab_names") or {}).items()}
+            self.buried_positions = {
+                str(k): str(v) for k, v in (self.restore_snapshot.get("buried_positions") or {}).items()
+            }
 
     async def refresh(self) -> None:
         with self.lock:
@@ -73,6 +94,27 @@ class State:
             return
         with self.lock:
             self.snapshot = snap
+        self._maybe_persist(snap, tab_names, buried_pos)
+
+    def _maybe_persist(self, snap: dict[str, Any], tab_names: dict[str, str], buried_pos: dict[str, str]) -> None:
+        """Persist workspace state to disk, debounced and only when it changed.
+
+        Runs the disk write on the default executor so it never blocks the loop.
+        """
+        now = time.monotonic()
+        if now - self._last_persist_ts < _PERSIST_DEBOUNCE_SECONDS:
+            return
+        try:
+            data = persistence.build_state(snap, tab_names, buried_pos)
+            sig = json.dumps(data, sort_keys=True)
+        except Exception:
+            log.exception("building persist state failed")
+            return
+        self._last_persist_ts = now
+        if sig == self._last_persisted_sig:
+            return
+        self._last_persisted_sig = sig
+        self.loop.run_in_executor(None, persistence.save_state, data)
 
     def get_snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -254,6 +296,17 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/new-window":
                 result = self.state.call_async(lambda: actions.new_window(self.state.connection))
+                self._send_json(result)
+                return
+            if path == "/api/restore":
+                data = self.state.restore_snapshot
+                if not data:
+                    self._send_json({"ok": False, "error": "no saved workspace"})
+                    return
+                result = self.state.call_async(
+                    lambda: actions.restore_workspace(self.state.connection, self.state.app, data, self.state),
+                    timeout=60.0,
+                )
                 self._send_json(result)
                 return
             if path == "/api/bury-session":

@@ -76,6 +76,7 @@ async def detect(
             "ext.claude.active": False,
             "ext.claude.state": "idle",
             "ext.claude.action_needed": False,
+            "ext.claude.session_id": "",
         }
 
     state = sig.get("state", "running")  # default: active but no signal yet → running
@@ -88,4 +89,7 @@ async def detect(
         "ext.claude.active": True,
         "ext.claude.state": state,
         "ext.claude.action_needed": state == "attention",
+        # Claude's own session UUID (from notify.sh), used to resume this pane via
+        # `claude --resume <id>` after a restart. Empty until the first hook fires.
+        "ext.claude.session_id": sig.get("claude_session_id", ""),
     }

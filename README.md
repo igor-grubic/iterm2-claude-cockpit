@@ -16,6 +16,7 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 - Click the folder pill to focus the pane; on the active pane, hover reveals "copy" and clicking copies its working directory to the clipboard
 - Create new tabs and windows from the panel
 - Bury and unbury sessions (hide a running pane without closing it)
+- Session restore (⟲ button) — recreate your windows/tabs/panes after closing or updating iTerm2 and resume each Claude Code session via `claude --resume`
 - YAML project layouts — define a named set of tabs and open them with one click
 - Settings panel (⚙ button) — shows the plugin version and installed extensions at a glance
 - Optional extensions — opt-in modules can enrich the snapshot, inject CSS/JS into the panel, and add HTTP routes (see [Extensions](#extensions))
@@ -130,6 +131,16 @@ rm -rf "$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm_workfl
 ```
 
 Also remove the old toolbelt entry from iTerm2's Toolbelt menu: right-click the toolbelt and untick **Worktree** (if present), then re-enable **Claude Cockpit** after re-running step 3.
+
+## Session restore
+
+Closing iTerm2 kills every pane and its processes, so in-progress work is normally lost — which makes quitting or updating iTerm2 risky. Session restore brings your workspace back.
+
+As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory and — for Claude panes — its Claude Code session id) to `~/.config/iterm2-claude-cockpit/state.json`. The Claude session id is captured from the same hook used for status tracking, so [Claude Code integration](#claude-code-integration) must be set up for resume to work.
+
+Click the **⟲ Restore** button in the footer (it confirms first) to recreate the saved windows, tabs, and panes. Each pane `cd`s back to its directory; Claude panes whose transcript still exists are resumed with `claude --resume <session-id>`. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive.
+
+What it does **not** restore: any turn that was mid-execution when iTerm2 closed (the resumed session picks up from the last completed turn), terminal scrollback, non-Claude process state (dev servers, builds), and exact split sizes (panes come back as a simple vertical split). Custom tab names and buried-pane positions are persisted in the same file and also survive restarts.
 
 ## Project layouts
 
@@ -279,6 +290,17 @@ In iTerm2 3.6+ the global `OpenToolbelt` defaults key is overridden by per-profi
 ### Log paths show `~/.config/iterm2/AppSupport/Scripts/...` even though I used `~/Library/Application Support/...`
 
 iTerm2 3.6+ moved its support directory to an XDG-style path. The legacy `~/Library/Application Support/iTerm2/` location symlinks transparently to the new one — both work, the different path in logs is expected.
+
+---
+
+### Restore opened the panes but Claude didn't resume
+
+Restore recreates every pane's directory, but it only runs `claude --resume` when it can find the session. Common causes:
+
+- **No saved session id.** The Claude session id is captured by the status hook — if [Claude Code integration](#claude-code-integration) isn't installed, restore has nothing to resume and brings panes back as a plain shell. Set up the hook and re-run a turn so the session is recorded.
+- **Transcript missing.** Sessions older than your Claude `cleanupPeriodDays` setting (default 30) are deleted, and so is the ability to resume them. Restore falls back to just `cd`-ing into the directory (counted as `skipped`).
+- **`claude` not on `PATH` / not logged in.** The pane runs `claude --resume …` in your shell; if `claude` isn't found or you're logged out, you'll see the shell error or a login prompt in the right directory.
+- **In-flight turn not continued.** A turn that was mid-execution when iTerm2 closed is gone; the resumed session starts from the last completed turn.
 
 ## Contributing
 

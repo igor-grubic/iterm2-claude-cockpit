@@ -561,6 +561,31 @@ window.PaneTreeExt = window.PaneTreeExt || {
     openSettings();
   });
 
+  document.getElementById("btn-restore").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const anchor = ev.currentTarget;
+    // Restore spawns windows and resumes Claude sessions — confirm first.
+    showConfirmPopup(anchor, async () => {
+      if (anchor.disabled) return;            // a restore is already in flight
+      anchor.disabled = true;                 // block duplicate restores until done
+      toast("restoring…");
+      try {
+        const res = await fetch("/api/restore", { method: "POST" });
+        const data = await res.json();
+        if (!data.ok) { toast(data.error || "restore failed", false); return; }
+        const n = data.restored || 0;
+        let msg = `restored ${n} pane${n === 1 ? "" : "s"}`;
+        if (data.resumed) msg += `, resumed ${data.resumed}`;
+        if (data.skipped) msg += `, skipped ${data.skipped}`;
+        toast(msg);
+      } catch (e) {
+        toast("restore error: " + e, false);
+      } finally {
+        anchor.disabled = false;
+      }
+    });
+  });
+
   document.getElementById("btn-split-vertical").addEventListener("click", async () => {
     const id = activeSessionId();
     if (!id) { toast("no active pane", false); return; }

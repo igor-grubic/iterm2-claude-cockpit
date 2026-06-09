@@ -59,7 +59,10 @@ Minimal HTTP server (no framework). Routes:
 - `GET /static/ext/<name>/*` → extension static assets
 
 ### `server/actions.py`
-Handles user-initiated actions (focus window/tab/pane, create tab/window, close session, bury/unbury). Returns `{"ok": true}` or `{"error": "..."}`.
+Handles user-initiated actions (focus window/tab/pane, create tab/window, close session, bury/unbury, restore workspace). Returns `{"ok": true}` or `{"error": "..."}`. `restore_workspace` recreates persisted windows/tabs/panes and resumes Claude panes via `claude --resume`.
+
+### `server/persistence.py`
+Durable workspace state. Serializes the layout (windows → tabs → panes, each pane's cwd + Claude session id) plus `tab_names`/`buried_positions` to `~/.config/iterm2-claude-cockpit/state.json`. `State.refresh()` writes it debounced (on change, ≥5s apart) via the executor; `State.__init__` seeds `tab_names`/`buried_positions` from it at startup, and `POST /api/restore` reads it to rebuild the workspace.
 
 ### `extensions/_api.py`
 Defines `ExtensionAPI` (the v1 contract exposed to extensions) and `Registry` (the shared mutable container the core reads at request time). See `specs/extension-api.md`.

@@ -163,6 +163,22 @@ Open a named project layout from `iterm2_claude_cockpit/projects/<name>.yaml`.
 
 ---
 
+### `POST /api/restore`
+
+Recreate the last saved workspace (see "Session restore" in the README). Reads the persisted layout from `~/.config/iterm2-claude-cockpit/state.json` and creates fresh windows/tabs/panes, sending `cd <cwd>` into each pane and `claude --resume <session-id>` into Claude panes whose transcript still exists and that aren't already open. Always creates new windows; it never modifies existing ones. Takes no request body.
+
+**Response:** `200 application/json`
+
+```json
+{ "ok": true, "restored": 5, "resumed": 3, "skipped": 1 }
+```
+
+`restored` — panes recreated. `resumed` — Claude sessions resumed via `claude --resume`. `skipped` — Claude panes recreated as a plain shell because the session was already open or its transcript was gone. If one or more windows fail to recreate, restore continues with the rest and includes an `errors` array (e.g. `"errors": ["window 2: ..."]`) alongside `"ok": true` with the counts that succeeded. Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
+
+The restored workspace is the layout as it was when the daemon last shut down (loaded into memory at startup), not the freshly relaunched layout.
+
+---
+
 ## Static assets
 
 ### `GET /static/<path>`

@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Uninstall command: split by install option; Option A (direct clone) now uses `rm -rf`.
 
 ### Added
+- Restore workspace button (⟲) in the footer icon row — after closing or updating iTerm2, recreates your windows, tabs, and panes in their saved working directories and resumes each Claude Code session via `claude --resume`. Confirms before running; non-Claude panes (and Claude panes whose transcript is gone) come back as a plain shell in the right directory.
+- Tab names and buried-pane positions now persist across restarts. The workspace layout is saved to `~/.config/iterm2-claude-cockpit/state.json` and is the basis for the Restore button.
 - Settings button (⚙) in the footer icon row — opens a panel showing the plugin version and installed extensions (enabled and available-but-disabled).
 - Extension system: opt-in modules under `iterm2_claude_cockpit/extensions/<name>/` with a small `register(api)` surface for snapshot enrichment, webview asset injection (CSS/JS), and HTTP route registration. Enable/disable with `python -m iterm2_claude_cockpit ext enable|disable <name>`.
 - `claude` bundled extension: detects Claude-driven panes (job match + descendant process walk), tags them as `ext.claude.active`, and decorates them with an accent color and `✦` badge. Enabled by default; `ext disable claude` for a vanilla worktree panel.
