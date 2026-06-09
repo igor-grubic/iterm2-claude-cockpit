@@ -115,7 +115,7 @@ Closing iTerm2 kills every pane and its processes, so in-progress work is normal
 
 As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory and — for Claude panes — its Claude Code session id) to `~/.config/iterm2-claude-cockpit/state.json`. The Claude session id is captured from the same hook used for status tracking, so [Claude Code integration](#claude-code-integration) must be set up for resume to work.
 
-Click the **⟲ Restore** button in the footer (it confirms first) to recreate the saved windows, tabs, and panes. Each pane `cd`s back to its directory; Claude panes whose transcript still exists are resumed with `claude --resume <session-id>`. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive.
+Click the **⟲ Restore** button in the footer (it shows a summary — how many windows, tabs, and panes — and confirms first) to recreate the saved windows, tabs, and panes. Each pane `cd`s back to its directory; Claude panes whose transcript still exists are resumed with `claude --resume <session-id>`. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive.
 
 > **Requires the `claude` extension for resume.** Identifying Claude panes and capturing their session id is done by the bundled [`claude` extension](#extensions), which is enabled by default. With it disabled (`ext disable claude`), Restore still recreates your full window/tab/pane layout in the right working directories, but treats every pane as a plain shell — it won't resume any Claude session. Restoring the layout (without resume) does not require the extension.
 

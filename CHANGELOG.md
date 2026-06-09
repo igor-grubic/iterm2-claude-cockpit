@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
-- Restore workspace button (⟲) in the footer icon row — after closing or updating iTerm2, recreates your windows, tabs, and panes in their saved working directories and resumes each Claude Code session via `claude --resume`. Confirms before running; non-Claude panes (and Claude panes whose transcript is gone) come back as a plain shell in the right directory.
+- Restore workspace button (⟲) in the footer icon row — after closing or updating iTerm2, recreates your windows, tabs, and panes in their saved working directories and resumes each Claude Code session via `claude --resume`. Confirms first with a summary of how many windows, tabs, and panes will be restored; non-Claude panes (and Claude panes whose transcript is gone) come back as a plain shell in the right directory.
 - Tab names and buried-pane positions now persist across restarts. The workspace layout is saved to `~/.config/iterm2-claude-cockpit/state.json` and is the basis for the Restore button.
 - `install.sh` and `uninstall.sh` at the repo root. `install.sh` validates iTerm2 + the bundled Python, cleans up any stale install (with consent), and places the AutoLaunch symlink. Idempotent; supports `--force` and `--dry-run`.
 - Settings button (⚙) in the footer icon row — opens a panel showing the plugin version and installed extensions (enabled and available-but-disabled).

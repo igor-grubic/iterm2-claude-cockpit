@@ -441,6 +441,53 @@ window.PaneTreeExt = window.PaneTreeExt || {
     activePopup = popup;
     yes.focus();
   }
+
+  // Larger confirm shown ABOVE the button, summarizing what Restore will recreate.
+  function showRestoreConfirmPopup(anchor, summary, onConfirm) {
+    dismissPopup();
+    const popup = document.createElement("div");
+    popup.className = "confirm-popup restore-confirm-popup";
+    popup.addEventListener("click", (ev) => ev.stopPropagation());
+
+    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+    const title = document.createElement("div");
+    title.className = "restore-confirm-title";
+    title.textContent = "Restore workspace?";
+
+    const counts = document.createElement("div");
+    counts.className = "restore-confirm-counts";
+    counts.textContent = `${plural(summary.windows || 0, "window")} · ${plural(summary.tabs || 0, "tab")} · ${plural(summary.panes || 0, "pane")}`;
+
+    popup.append(title, counts);
+
+    if (summary.claude) {
+      const note = document.createElement("div");
+      note.className = "restore-confirm-note";
+      note.textContent = `includes ${plural(summary.claude, "Claude pane")}`;
+      popup.append(note);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "restore-confirm-actions";
+    const yes = document.createElement("button");
+    yes.className = "confirm-yes";
+    yes.textContent = "yes";
+    yes.addEventListener("click", () => { dismissPopup(); onConfirm(); });
+    const no = document.createElement("button");
+    no.className = "confirm-no";
+    no.textContent = "no";
+    no.addEventListener("click", () => dismissPopup());
+    actions.append(yes, no);
+    popup.append(actions);
+
+    document.body.appendChild(popup);
+    const rect = anchor.getBoundingClientRect();
+    popup.style.bottom = (window.innerHeight - rect.top + 6) + "px";
+    popup.style.right = (window.innerWidth - rect.right) + "px";
+    activePopup = popup;
+    yes.focus();
+  }
   document.addEventListener("click", dismissPopup);
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") dismissPopup(); });
 
@@ -561,29 +608,40 @@ window.PaneTreeExt = window.PaneTreeExt || {
     openSettings();
   });
 
-  document.getElementById("btn-restore").addEventListener("click", (ev) => {
+  async function runRestore(anchor) {
+    if (anchor.disabled) return;              // a restore is already in flight
+    anchor.disabled = true;                   // block duplicate restores until done
+    toast("restoring…");
+    try {
+      const res = await fetch("/api/restore", { method: "POST" });
+      const data = await res.json();
+      if (!data.ok) { toast(data.error || "restore failed", false); return; }
+      const n = data.restored || 0;
+      let msg = `restored ${n} pane${n === 1 ? "" : "s"}`;
+      if (data.resumed) msg += `, resumed ${data.resumed}`;
+      if (data.skipped) msg += `, skipped ${data.skipped}`;
+      toast(msg);
+    } catch (e) {
+      toast("restore error: " + e, false);
+    } finally {
+      anchor.disabled = false;
+    }
+  }
+
+  document.getElementById("btn-restore").addEventListener("click", async (ev) => {
     ev.stopPropagation();
     const anchor = ev.currentTarget;
-    // Restore spawns windows and resumes Claude sessions — confirm first.
-    showConfirmPopup(anchor, async () => {
-      if (anchor.disabled) return;            // a restore is already in flight
-      anchor.disabled = true;                 // block duplicate restores until done
-      toast("restoring…");
-      try {
-        const res = await fetch("/api/restore", { method: "POST" });
-        const data = await res.json();
-        if (!data.ok) { toast(data.error || "restore failed", false); return; }
-        const n = data.restored || 0;
-        let msg = `restored ${n} pane${n === 1 ? "" : "s"}`;
-        if (data.resumed) msg += `, resumed ${data.resumed}`;
-        if (data.skipped) msg += `, skipped ${data.skipped}`;
-        toast(msg);
-      } catch (e) {
-        toast("restore error: " + e, false);
-      } finally {
-        anchor.disabled = false;
-      }
-    });
+    // Fetch what would be restored (from the saved pre-close layout), then confirm.
+    let summary;
+    try {
+      const res = await fetch("/api/restore-preview", { cache: "no-store" });
+      summary = await res.json();
+    } catch (e) {
+      toast("restore preview error: " + e, false);
+      return;
+    }
+    if (!summary.ok) { toast(summary.error || "no saved workspace", false); return; }
+    showRestoreConfirmPopup(anchor, summary, () => runRestore(anchor));
   });
 
   document.getElementById("btn-split-vertical").addEventListener("click", async () => {

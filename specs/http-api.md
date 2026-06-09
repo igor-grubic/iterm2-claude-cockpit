@@ -163,6 +163,20 @@ Open a named project layout from `iterm2_claude_cockpit/projects/<name>.yaml`.
 
 ---
 
+### `GET /api/restore-preview`
+
+Summarize what `POST /api/restore` would recreate, read from the in-memory saved snapshot. Used by the panel to show counts in the Restore confirmation before the user commits.
+
+**Response:** `200 application/json`
+
+```json
+{ "ok": true, "windows": 3, "tabs": 8, "panes": 14, "claude": 3 }
+```
+
+`windows`/`tabs`/`panes` — totals that would be recreated. `claude` — how many of those panes were flagged as Claude (informational; actual resumes depend on transcripts still existing). Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
+
+---
+
 ### `POST /api/restore`
 
 Recreate the last saved workspace (see "Session restore" in the README). Reads the persisted layout from `~/.config/iterm2-claude-cockpit/state.json` and creates fresh windows/tabs/panes, sending `cd <cwd>` into each pane and `claude --resume <session-id>` into Claude panes whose transcript still exists and that aren't already open. Always creates new windows; it never modifies existing ones. Takes no request body.

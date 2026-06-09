@@ -264,6 +264,24 @@ class _Handler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if path == "/api/restore-preview":
+            snap = self.state.restore_snapshot
+            if not snap:
+                self._send_json({"ok": False, "error": "no saved workspace"})
+                return
+            windows = snap.get("windows", [])
+            all_tabs = [t for w in windows for t in w.get("tabs", [])]
+            all_panes = [p for t in all_tabs for p in t.get("panes", [])]
+            self._send_json(
+                {
+                    "ok": True,
+                    "windows": len(windows),
+                    "tabs": len(all_tabs),
+                    "panes": len(all_panes),
+                    "claude": sum(1 for p in all_panes if p.get("claude")),
+                }
+            )
+            return
         if path == "/api/session-lines":
             qs = parse_qs(urlparse(self.path).query)
             session_id = (qs.get("id") or [""])[0]
