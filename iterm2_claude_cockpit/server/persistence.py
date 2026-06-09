@@ -55,6 +55,11 @@ def build_state(
                 live_pane_ids.add(str(pane.get("id", "")))
                 if pane.get("buried"):
                     continue
+                # The ext.claude.* fields come from the opt-in `claude` extension.
+                # When it's disabled they're simply absent → claude:false,
+                # session_id:"" → the pane restores cwd-only. This dependency is
+                # intentional and documented (README → Session restore); layout/cwd
+                # restore itself is extension-independent.
                 panes.append(
                     {
                         "cwd": pane.get("cwd", ""),

@@ -140,6 +140,8 @@ As you work, the daemon saves a snapshot of your layout (windows → tabs → pa
 
 Click the **⟲ Restore** button in the footer (it confirms first) to recreate the saved windows, tabs, and panes. Each pane `cd`s back to its directory; Claude panes whose transcript still exists are resumed with `claude --resume <session-id>`. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive.
 
+> **Requires the `claude` extension for resume.** Identifying Claude panes and capturing their session id is done by the bundled [`claude` extension](#extensions), which is enabled by default. With it disabled (`ext disable claude`), Restore still recreates your full window/tab/pane layout in the right working directories, but treats every pane as a plain shell — it won't resume any Claude session. Restoring the layout (without resume) does not require the extension.
+
 What it does **not** restore: any turn that was mid-execution when iTerm2 closed (the resumed session picks up from the last completed turn), terminal scrollback, non-Claude process state (dev servers, builds), and exact split sizes (panes come back as a simple vertical split). Custom tab names and buried-pane positions are persisted in the same file and also survive restarts.
 
 ## Project layouts
@@ -297,6 +299,7 @@ iTerm2 3.6+ moved its support directory to an XDG-style path. The legacy `~/Libr
 
 Restore recreates every pane's directory, but it only runs `claude --resume` when it can find the session. Common causes:
 
+- **The `claude` extension is disabled.** Capturing Claude session ids is done by the bundled `claude` extension; with it disabled (`ext disable claude`) no pane is recognized as Claude, so Restore recreates the layout + directories only. Re-enable it (`ext enable claude`) and restart iTerm2.
 - **No saved session id.** The Claude session id is captured by the status hook — if [Claude Code integration](#claude-code-integration) isn't installed, restore has nothing to resume and brings panes back as a plain shell. Set up the hook and re-run a turn so the session is recorded.
 - **Transcript missing.** Sessions older than your Claude `cleanupPeriodDays` setting (default 30) are deleted, and so is the ability to resume them. Restore falls back to just `cd`-ing into the directory (counted as `skipped`).
 - **`claude` not on `PATH` / not logged in.** The pane runs `claude --resume …` in your shell; if `claude` isn't found or you're logged out, you'll see the shell error or a login prompt in the right directory.

@@ -177,6 +177,8 @@ Recreate the last saved workspace (see "Session restore" in the README). Reads t
 
 The restored workspace is the layout as it was when the daemon last shut down (loaded into memory at startup), not the freshly relaunched layout.
 
+`resumed`/`skipped` are non-zero only when the bundled `claude` extension is enabled — it supplies the `ext.claude.active`/`ext.claude.session_id` fields the restore logic reads. With it disabled, every pane is restored cwd-only (layout restore itself is extension-independent).
+
 ---
 
 ## Static assets
