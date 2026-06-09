@@ -6,22 +6,24 @@ This file is the authoritative guide for AI agents (Claude Code and others) work
 
 ## Project in one sentence
 
-`iterm2-claude-cockpit` is a zero-dependency iTerm2 AutoLaunch daemon that serves a live window/tab/pane tree as a toolbelt cockpit, with first-class support for managing parallel Claude Code panes via a bundled extension.
+`iterm2-claude-cockpit` is a zero-dependency iTerm2 AutoLaunch daemon (Basic-script .py symlinked into `Scripts/AutoLaunch/`) that serves a live window/tab/pane tree as a toolbelt cockpit, with first-class support for managing parallel Claude Code panes via a bundled extension.
 
 ---
 
-## Critical structural constraint — DO NOT change
+## Install model
 
-iTerm2's Full Environment loader requires the folder name, inner package name, and entry script name to all match:
+The daemon ships as an iTerm2 **AutoLaunch Basic script** — installed via a single file symlink:
 
 ```
-iterm2_claude_cockpit/          ← cloned/symlinked folder (must be named iterm2_claude_cockpit)
-├── setup.cfg            ← required for Full Environment
-└── iterm2_claude_cockpit/      ← Python package (must match folder name)
-    └── iterm2_claude_cockpit.py ← entry point (must match package name)
+~/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit.py
+   → <repo>/iterm2_claude_cockpit/iterm2_claude_cockpit.py
 ```
 
-Never rename these, change the two-level structure, or remove `setup.cfg`. The repo name (`iterm2-claude-cockpit`) intentionally differs from the install name (`iterm2_claude_cockpit`).
+iTerm2 runs the symlinked `.py` with its bundled Python (which already has the `iterm2` library). The entry script does `sys.path.insert(0, str(Path(__file__).resolve().parent))` so imports resolve through the symlink to the inner package.
+
+`install.sh` and `uninstall.sh` at the repo root manage the symlink. The repo can live anywhere — it doesn't have to be inside `AutoLaunch/`.
+
+The two-level layout (`iterm2_claude_cockpit/iterm2_claude_cockpit/iterm2_claude_cockpit.py`) is just a normal Python package — outer folder is the repo, inner folder is the package. It is **not** required by iTerm2; you can refactor it for normal Python reasons. If you do, update the path in `install.sh` and the symlink target in any active install.
 
 ---
 
@@ -143,8 +145,7 @@ When adding logic that doesn't depend on the iTerm2 runtime (e.g., parsing, data
 
 ## What NOT to do
 
-- Do not add external runtime dependencies (anything beyond `iterm2` and stdlib)
-- Do not rename `iterm2_claude_cockpit/` or the inner package — the iTerm2 loader will break
+- Do not add external runtime dependencies (anything beyond `iterm2` and stdlib) — the script runs with iTerm2's bundled Python (no per-script venv)
 - Do not write top-level snapshot keys from an extension — use `ext.<name>.<field>`
 - Do not commit `iterm2env/` or anything under `iterm2env-*/` (gitignored for a reason)
 - Do not push directly to `main` — open a PR

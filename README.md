@@ -26,66 +26,53 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 ## Requirements
 
 - macOS with iTerm2 3.5 or later
-- Python API enabled (see step 1 below)
+- iTerm2's Python API enabled (see step 2 below)
 
 No separate Python installation needed — iTerm2 bundles its own runtime.
 
 ## Installation
 
-### 1. Enable the Python API
-
-`iTerm2 → Settings → General → Magic → ☑ Enable Python API`
-
-### 2. Clone
-
-**Option A — recommended for most users.** Clone directly into the AutoLaunch directory:
-
-```bash
-git clone https://github.com/igor-grubic/iterm2-claude-cockpit.git \
-  "$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit"
-```
-
-**Option B — recommended for developers.** Clone anywhere and symlink:
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/igor-grubic/iterm2-claude-cockpit.git ~/code/iterm2_claude_cockpit
-ln -s "$HOME/code/iterm2_claude_cockpit" \
-  "$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit"
+cd ~/code/iterm2_claude_cockpit
+bash install.sh
 ```
 
-> **Why `iterm2_claude_cockpit`?** iTerm2's script loader requires the folder name, inner package name, and entry script name to all match — and they must be valid Python identifiers (underscores, not hyphens). The distribution name is `iterm2-claude-cockpit` (hyphens); the install folder is `iterm2_claude_cockpit` (underscores).
+`install.sh` validates iTerm2 + its bundled Python, removes any stale AutoLaunch entry from a previous install (with consent), and creates a single file symlink at:
 
-### 3. Run once from the Scripts menu
+```
+~/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit.py
+```
 
-`Scripts → AutoLaunch → iterm2_claude_cockpit → iterm2_claude_cockpit.py`
+iTerm2 runs this as a Basic script using its own bundled Python (which already has the `iterm2` library). No virtual environment to create, no "Full Environment" setup.
 
-iTerm2 will install dependencies and create an `iterm2env/` virtual environment inside the script folder. **This step is required — autolaunch will not work until it has been completed at least once.** It only needs to happen once per installation.
+You can clone the repo anywhere — the symlink takes care of the AutoLaunch wiring.
 
-### 4. Allow the API permission prompt
+### 2. Enable the Python API
 
-Click **Allow** when iTerm2 asks for Python API access. The daemon starts immediately and will auto-launch on every subsequent iTerm2 start.
+`iTerm2 → Settings → General → Magic → ☑ Enable Python API`
 
-### 5. Set up Claude Code status tracking
+### 3. Restart iTerm2
+
+Cmd-Q, then reopen. Click **Allow** on the first-run API permission prompt. The daemon auto-launches on every subsequent iTerm2 start.
+
+### 4. Show the panel
+
+`View → Toolbelt → Show Toolbelt`, then right-click the toolbelt and tick **Claude Cockpit**.
+
+iTerm2 remembers both settings, so this is a one-time step.
+
+### 5. (Optional) Set up Claude Code status tracking
 
 The Claude extension is enabled by default. Run its interactive installer to wire up accurate `running` / `idle` / `attention` states via Claude Code hooks:
 
-**Option A:**
-```bash
-python3 "$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit/iterm2_claude_cockpit/extensions/claude/hooks/install.py"
-```
-
-**Option B:**
 ```bash
 python3 ~/code/iterm2_claude_cockpit/iterm2_claude_cockpit/extensions/claude/hooks/install.py
 ```
 
 The installer explains every change, shows a before/after diff, and asks for confirmation before touching anything. It backs up your existing `~/.claude/settings.json` first.
-
-### 6. Show the panel
-
-`View → Toolbelt → Show Toolbelt`, then right-click the toolbelt and tick **Claude Cockpit**.
-
-iTerm2 remembers both settings, so this is a one-time step.
 
 ### Auto-open the panel in every new window (optional)
 
@@ -95,42 +82,32 @@ This is per-profile — repeat for any profile you use. Takes effect on the next
 
 ### Updating
 
-**Option A:**
-```bash
-cd "$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit" && git pull
-```
-
-**Option B:**
 ```bash
 cd ~/code/iterm2_claude_cockpit && git pull
 ```
 
-Then re-run from `Scripts → AutoLaunch → iterm2_claude_cockpit → iterm2_claude_cockpit.py`, or restart iTerm2.
+Then restart iTerm2. The symlink picks up your latest code automatically; no re-install needed.
 
 ### Uninstalling
 
-**Option A (cloned directly):**
 ```bash
-rm -rf "$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit"
-```
-
-**Option B (symlinked):**
-```bash
-rm "$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit"
+bash ~/code/iterm2_claude_cockpit/uninstall.sh
 # optionally also remove the repo:
 rm -rf ~/code/iterm2_claude_cockpit
 ```
 
-### Migrating from `iterm_workflow`
+`uninstall.sh` removes only the AutoLaunch symlink; the repo and your Claude Code hook config are left untouched.
 
-If you installed before this rename, remove the old entry and re-clone:
+### Migrating from a previous install
 
-```bash
-rm -rf "$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm_workflow"
-# then follow the installation steps above with the new iterm2_claude_cockpit name
-```
+If you installed an earlier version (folder-based Full Environment install), `install.sh` detects and offers to clean up:
 
-Also remove the old toolbelt entry from iTerm2's Toolbelt menu: right-click the toolbelt and untick **Worktree** (if present), then re-enable **Claude Cockpit** after re-running step 3.
+- the old folder symlink at `~/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit`
+- a leftover `iterm_workflow` entry from the pre-rename name
+
+Both must be removed for AutoLaunch to find the new file symlink at startup. If you decline the prompt, iTerm2 will keep showing a "malformed script" warning for the old folder.
+
+Also, if you see an old **Worktree** entry in the toolbelt menu, untick it and re-tick **Claude Cockpit**.
 
 ## Session restore
 
@@ -232,48 +209,37 @@ Extension JS is loaded after `app.js`, so the registry exists when your script r
 
 ### The panel is blank / shows "connecting…"
 
-The daemon isn't running. Check the console for errors, then re-run the script from `Scripts → AutoLaunch → iterm2_claude_cockpit → iterm2_claude_cockpit.py`.
+The daemon isn't running. Check `Scripts → Manage → Console` for Python tracebacks. If the symlink is intact and the API is enabled, restart iTerm2.
 
 ---
 
 ### AutoLaunch never started the script — no permission prompt appeared
 
-The `iterm2env/` virtual environment inside the script folder hasn't been created yet. iTerm2 requires it before it will autolaunch.
-
-Run the script once manually:
-
-`Scripts → AutoLaunch → iterm2_claude_cockpit → iterm2_claude_cockpit.py`
-
-iTerm2 installs dependencies and creates `iterm2env/` on this first run. After that, autolaunch works on every subsequent iTerm2 start.
-
-To verify the environment was created, check that this directory exists:
+Check the symlink exists and points at this repo:
 
 ```bash
-ls "$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit/iterm2env"
-# or for Option B:
-ls ~/code/iterm2_claude_cockpit/iterm2env
+ls -la "$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit.py"
 ```
 
-If it doesn't exist after running manually, check the console (`Scripts → Manage → Console`) for errors.
+If it's missing or broken, re-run `bash install.sh` from the repo. Also confirm `Settings → General → Magic → Enable Python API` is on.
+
+If you previously had a *folder* at the same name (from an older install), AutoLaunch will show a one-time "Cannot Run Script — malformed" warning for it. Remove it:
+
+```bash
+rm -rf "$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/iterm2_claude_cockpit"
+```
 
 ---
 
-### The Scripts menu shows nothing / the folder doesn't appear
+### The Scripts menu shows nothing / the entry doesn't appear
 
-The folder name must match the `.py` filename exactly, and both must be valid Python identifiers (underscores, not hyphens). If you renamed the folder, rename it back to `iterm2_claude_cockpit`.
+`Scripts → AutoLaunch` should list `iterm2_claude_cockpit.py` as a single entry. If it's missing, the symlink wasn't placed — run `bash install.sh` again.
 
 ---
 
 ### `ModuleNotFoundError` in the console
 
-The script is running as a Basic (shared) environment rather than Full Environment. This happens when the two-level folder structure or `setup.cfg` is missing. Make sure the layout is:
-
-```
-iterm2_claude_cockpit/          ← the cloned/symlinked folder
-├── setup.cfg
-└── iterm2_claude_cockpit/
-    └── iterm2_claude_cockpit.py
-```
+The daemon's entry script adds its own directory to `sys.path` before importing — if you see a `ModuleNotFoundError`, your symlink probably points at a wrong file. The correct target is `<repo>/iterm2_claude_cockpit/iterm2_claude_cockpit.py` (the entry **inside** the inner package). Re-run `bash install.sh` to fix it.
 
 ---
 

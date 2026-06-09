@@ -8,7 +8,7 @@
 
 ## Checklist
 
-- [ ] `ruff check iterm_workflow/` passes
-- [ ] `ruff format --check iterm_workflow/` passes
-- [ ] `mypy iterm_workflow/` passes
+- [ ] `ruff check iterm2_claude_cockpit/` passes
+- [ ] `ruff format --check iterm2_claude_cockpit/` passes
+- [ ] `mypy iterm2_claude_cockpit/` passes
 - [ ] README updated if user-visible behaviour changed

@@ -1,11 +1,11 @@
 """Tiny CLI for managing extensions.
 
 Usage:
-  python -m iterm_workflow ext list
-  python -m iterm_workflow ext enable <name>
-  python -m iterm_workflow ext disable <name>
+  python -m iterm2_claude_cockpit ext list
+  python -m iterm2_claude_cockpit ext enable <name>
+  python -m iterm2_claude_cockpit ext disable <name>
 
-Edits iterm_workflow/extensions.json. Restart iTerm2 to pick up changes.
+Edits iterm2_claude_cockpit/extensions.json. Restart iTerm2 to pick up changes.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import argparse
 import sys
 from pathlib import Path
 
-# Make the bundled package importable when run via `python -m iterm_workflow`
+# Make the bundled package importable when run via `python -m iterm2_claude_cockpit`
 # from outside the package directory.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -25,7 +25,7 @@ def _cmd_list() -> int:
     available = ext_loader.list_available()
     enabled = set(ext_loader.list_enabled())
     if not available:
-        print("(no extensions found under iterm_workflow/extensions/)")
+        print("(no extensions found under iterm2_claude_cockpit/extensions/)")
         return 0
     width = max(len(n) for n in available)
     for name in available:
@@ -68,7 +68,7 @@ def _cmd_disable(name: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m iterm_workflow")
+    parser = argparse.ArgumentParser(prog="python -m iterm2_claude_cockpit")
     sub = parser.add_subparsers(dest="cmd", required=True)
     ext = sub.add_parser("ext", help="manage extensions")
     ext_sub = ext.add_subparsers(dest="ext_cmd", required=True)

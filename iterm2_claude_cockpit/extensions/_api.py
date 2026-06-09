@@ -1,6 +1,6 @@
 """Extension API and shared registry.
 
-An extension is a subpackage of `iterm_workflow.extensions` exposing a
+An extension is a subpackage of `iterm2_claude_cockpit.extensions` exposing a
 `register(api)` callable. The loader instantiates an `ExtensionAPI` bound to
 the extension's name and passes it in. The API methods append to the shared
 `Registry`, which the core reads at request time.

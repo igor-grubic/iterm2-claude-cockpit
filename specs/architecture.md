@@ -2,16 +2,26 @@
 
 ## Overview
 
-`iterm2-claude-cockpit` is an iTerm2 AutoLaunch daemon. It runs inside iTerm2's bundled Python runtime (not the system Python) and registers event hooks via the iTerm2 Python API. A lightweight HTTP server on `127.0.0.1:9876` serves a browser-based side panel displayed in the iTerm2 toolbelt.
+`iterm2-claude-cockpit` is an iTerm2 AutoLaunch daemon. It's installed as a **Basic script** — a single `.py` file symlinked into `~/Library/Application Support/iTerm2/Scripts/AutoLaunch/` — and runs inside iTerm2's bundled Python (which ships with the `iterm2` library). A lightweight HTTP server on `127.0.0.1:9876` serves a browser-based side panel displayed in the iTerm2 toolbelt.
+
+## Install layout
+
+```
+~/Library/Application Support/iTerm2/Scripts/AutoLaunch/
+└── iterm2_claude_cockpit.py  ← symlink → <repo>/iterm2_claude_cockpit/iterm2_claude_cockpit.py
+```
+
+`install.sh` (at the repo root) places the symlink; `uninstall.sh` removes it. The repo can live anywhere.
 
 ## Startup sequence
 
-1. iTerm2 launches `iterm2_claude_cockpit/iterm2_claude_cockpit.py` automatically on start
-2. The daemon connects to iTerm2 via the Python API
-3. Enabled extensions are loaded from `extensions.json` via `extensions/_loader.py`
-4. The HTTP server starts on port 9876
-5. iTerm2 update hooks are registered (window/tab/session change events)
-6. The panel HTML is loaded in the toolbelt webview; the JS opens a polling connection to `/api/tree`
+1. iTerm2 boots, iterates direct children of `Scripts/AutoLaunch/`, and runs each `.py` it finds with its bundled Python.
+2. The entry script does `sys.path.insert(0, str(Path(__file__).resolve().parent))` — `.resolve()` follows the symlink, so the inner package directory ends up on `sys.path`.
+3. The daemon connects to iTerm2 via the Python API.
+4. Enabled extensions are loaded from `extensions.json` via `extensions/_loader.py`.
+5. The HTTP server starts on port 9876.
+6. iTerm2 update hooks are registered (window/tab/session change events).
+7. The panel HTML is loaded in the toolbelt webview; the JS opens a polling connection to `/api/tree`.
 
 ## Data flow
 
