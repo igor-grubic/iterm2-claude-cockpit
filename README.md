@@ -113,7 +113,9 @@ Also, if you see an old **Worktree** entry in the toolbelt menu, untick it and r
 
 Closing iTerm2 kills every pane and its processes, so in-progress work is normally lost — which makes quitting or updating iTerm2 risky. Session restore brings your workspace back.
 
-As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory and — for Claude panes — its Claude Code session id) to `~/.config/iterm2-claude-cockpit/state.json`. The Claude session id is captured from the same hook used for status tracking, so [Claude Code integration](#claude-code-integration) must be set up for resume to work.
+As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory and — for Claude panes — its Claude Code session id) under `~/.config/iterm2-claude-cockpit/`. The Claude session id is captured from the same hook used for status tracking, so [Claude Code integration](#claude-code-integration) must be set up for resume to work.
+
+Two files are kept: `state.json` mirrors your *current* layout, while `restore.json` holds the *last-good* layout that Restore recreates. The split matters — when iTerm2 relaunches it usually comes back with a single window, and keeping that degraded layout out of `restore.json` is what lets Restore still bring back your full previous workspace.
 
 Click the **⟲ Restore** button in the footer (it shows a summary — how many windows, tabs, and panes — and confirms first) to recreate the saved windows, tabs, and panes. Each pane `cd`s back to its directory; Claude panes whose transcript still exists are resumed with `claude --resume <session-id>`. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive.
 

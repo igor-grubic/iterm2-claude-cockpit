@@ -68,12 +68,18 @@ class State:
         # Workspace-state persistence: debounce bookkeeping (see refresh()).
         self._last_persist_ts: float = 0.0
         self._last_persisted_sig: str = ""
-        # Snapshot of the last saved workspace, loaded once at startup. Restore reads
-        # THIS in-memory copy, not the file: the rolling auto-save in refresh()
-        # overwrites the file with the current (post-restart, Claude-less) layout
-        # within ~1s of launch, so reading the file at restore time would return the
-        # degraded layout instead of the pre-close one we want to bring back.
-        self.restore_snapshot: dict[str, Any] | None = persistence.load_state()
+        self._start_monotonic: float = time.monotonic()
+        # Two files on disk (see persistence.py): state.json mirrors the *current*
+        # layout (overwritten ~1s after launch with the degraded post-relaunch one),
+        # while restore.json holds the last-good layout the rolling save never
+        # touches. Restore reads this in-memory copy of restore.json, frozen at
+        # startup, so it always brings back the *previous* session, not this one as
+        # it evolves. Fall back to state.json for installs predating the split.
+        restore = persistence.load_restore()
+        if restore is None:
+            restore = persistence.load_state()
+        self.restore_snapshot: dict[str, Any] | None = restore
+        self._restore_pane_count: int = persistence.count_panes(restore)
         # Seed in-memory metadata from it so custom tab names and buried positions
         # survive a daemon restart (correct when iTerm2 stayed up; harmlessly ignored
         # when its ids are stale after a full iTerm2 restart).
@@ -114,7 +120,16 @@ class State:
         if sig == self._last_persisted_sig:
             return
         self._last_persisted_sig = sig
+        # Always mirror the current layout to state.json.
         self.loop.run_in_executor(None, persistence.save_state, data)
+        # Update the separate restore snapshot only when safe (never empty; shrinks
+        # held off until past the startup grace window), so the single-window layout
+        # iTerm2 relaunches with can't wipe the workspace before Restore is used.
+        live_panes = persistence.count_panes(data)
+        uptime = now - self._start_monotonic
+        if persistence.should_update_restore(live_panes, self._restore_pane_count, uptime):
+            self._restore_pane_count = live_panes
+            self.loop.run_in_executor(None, persistence.save_restore, data)
 
     def get_snapshot(self) -> dict[str, Any]:
         with self.lock:

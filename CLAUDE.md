@@ -121,11 +121,12 @@ There are no automated integration tests — iTerm2's runtime environment cannot
 
 1. `ruff check` + `ruff format --check` (lint/format)
 2. `mypy` (type checking)
-3. YAML validation for `iterm2_claude_cockpit/projects/*.yaml`
+3. `python -m unittest discover -s tests` (stdlib unit tests — iterm2-free logic only)
+4. YAML validation for `iterm2_claude_cockpit/projects/*.yaml`
 
 Manual testing: install via symlink (see CONTRIBUTING.md), run the daemon, exercise the feature in iTerm2.
 
-When adding logic that doesn't depend on the iTerm2 runtime (e.g., parsing, data transformation, path manipulation), write it in a way that can be tested in isolation. Consider adding a `tests/` directory if unit-testable logic accumulates.
+When adding logic that doesn't depend on the iTerm2 runtime (e.g., parsing, data transformation, path manipulation), write it in a way that can be tested in isolation and add a case under `tests/`. Keep tests stdlib-only and import-light — the import chain must not pull in `iterm2` (unavailable in CI), so test pure helpers in `server/persistence.py`-style modules, not anything importing `http.py`.
 
 ---
 

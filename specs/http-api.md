@@ -179,7 +179,7 @@ Summarize what `POST /api/restore` would recreate, read from the in-memory saved
 
 ### `POST /api/restore`
 
-Recreate the last saved workspace (see "Session restore" in the README). Reads the persisted layout from `~/.config/iterm2-claude-cockpit/state.json` and creates fresh windows/tabs/panes, sending `cd <cwd>` into each pane and `claude --resume <session-id>` into Claude panes whose transcript still exists and that aren't already open. Always creates new windows; it never modifies existing ones. Takes no request body.
+Recreate the last saved workspace (see "Session restore" in the README). Reads the persisted layout from `~/.config/iterm2-claude-cockpit/restore.json` — the last-good snapshot, kept separate from the rolling `state.json` mirror so a relaunch can't overwrite it — and creates fresh windows/tabs/panes, sending `cd <cwd>` into each pane and `claude --resume <session-id>` into Claude panes whose transcript still exists and that aren't already open. Always creates new windows; it never modifies existing ones. Takes no request body.
 
 **Response:** `200 application/json`
 
@@ -189,7 +189,7 @@ Recreate the last saved workspace (see "Session restore" in the README). Reads t
 
 `restored` — panes recreated. `resumed` — Claude sessions resumed via `claude --resume`. `skipped` — Claude panes recreated as a plain shell because the session was already open or its transcript was gone. If one or more windows fail to recreate, restore continues with the rest and includes an `errors` array (e.g. `"errors": ["window 2: ..."]`) alongside `"ok": true` with the counts that succeeded. Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
 
-The restored workspace is the layout as it was when the daemon last shut down (loaded into memory at startup), not the freshly relaunched layout.
+The restored workspace is the layout as it was during the *previous* daemon session (loaded into memory from `restore.json` at startup), not the freshly relaunched layout. `restore.json` is shrink-frozen for `RESTORE_FREEZE_SECONDS` after launch, so the single-window layout iTerm2 comes back with cannot wipe the snapshot before Restore is used.
 
 `resumed`/`skipped` are non-zero only when the bundled `claude` extension is enabled — it supplies the `ext.claude.active`/`ext.claude.session_id` fields the restore logic reads. With it disabled, every pane is restored cwd-only (layout restore itself is extension-independent).
 

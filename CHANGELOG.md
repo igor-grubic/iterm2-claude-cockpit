@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - Restore workspace button (⟲) in the footer icon row — after closing or updating iTerm2, recreates your windows, tabs, and panes in their saved working directories and resumes each Claude Code session via `claude --resume`. Confirms first with a summary of how many windows, tabs, and panes will be restored; non-Claude panes (and Claude panes whose transcript is gone) come back as a plain shell in the right directory.
-- Tab names and buried-pane positions now persist across restarts. The workspace layout is saved to `~/.config/iterm2-claude-cockpit/state.json` and is the basis for the Restore button.
+- Tab names and buried-pane positions now persist across restarts. The workspace layout is saved under `~/.config/iterm2-claude-cockpit/` and is the basis for the Restore button. Two files are kept: `state.json` mirrors the current layout, while `restore.json` holds the last-good layout Restore recreates — so the single-window layout iTerm2 relaunches with can't overwrite your saved workspace before you restore it.
 - `install.sh` and `uninstall.sh` at the repo root. `install.sh` validates iTerm2 + the bundled Python, cleans up any stale install (with consent), and places the AutoLaunch symlink. Idempotent; supports `--force` and `--dry-run`.
 - Settings button (⚙) in the footer icon row — opens a panel showing the plugin version and installed extensions (enabled and available-but-disabled).
 - Extension system: opt-in modules under `iterm2_claude_cockpit/extensions/<name>/` with a small `register(api)` surface for snapshot enrichment, webview asset injection (CSS/JS), and HTTP route registration. Enable/disable with `python -m iterm2_claude_cockpit ext enable|disable <name>`.
@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `claude` extension detection: replaced the fragile descendant-PID walk and broad screen-scrape with a `ps -t <tty>` check (active) and hook signal files (state). States are now `idle`, `running`, `attention`, `plan`; the `ext.claude.mode` field is renamed to `ext.claude.state`.
 
 ### Fixed
+- `claude` extension: Claude panes no longer flicker back to a plain shell — showing the foreground job (e.g. `docker-compose`) as a badge and losing their accent styling — each time Claude finishes a turn and goes idle. A pane stays recognized as Claude while a `claude` process is attached to its TTY, and reverts to a plain pane only once Claude actually exits. This realigns `ext.claude.active` with its documented meaning (a `claude` process is attached to the TTY).
 - `setup.cfg`: added `packages = find:` to prevent newer setuptools from failing with a "multiple top-level packages" error during environment setup.
 - `pyproject.toml`: corrected `license` field (was referencing a missing `LICENSE` file).
 
