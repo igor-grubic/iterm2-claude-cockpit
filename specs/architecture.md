@@ -34,14 +34,14 @@ iterm2_claude_cockpit.py  ──────────────────
     │  on change: invalidate tree cache                       │
     ▼                                                         │
 server/tree.py                                                │
-    │  build_tree(app, buried_positions, registry)            │
+    │  build_tree(app, registry, tab_names)                   │
     │  → walks App → Window → Tab → Session                   │
     │  → calls session enrichers from Registry                │
     │  → returns JSON-serializable dict                       │
     ▼                                                         │
 server/http.py                                                │
     │  GET /api/tree → returns snapshot JSON                  │
-    │  POST /api/focus|close|create|bury → delegates to       │
+    │  POST /api/focus|close|create → delegates to            │
     │    server/actions.py                                     │
     │  GET /api/ext/<name>/<path> → delegates to              │
     │    Registry.routes                                      │
@@ -55,10 +55,10 @@ webview/index.html + app.js                                   │
 ## Module responsibilities
 
 ### `iterm2_claude_cockpit.py`
-Entry point. Connects to iTerm2, bootstraps extensions, starts the HTTP server, registers `async_monitor` hooks for window/tab/session changes. Owns the `buried_positions` dict (maps session_id → last-known tab_id, so buried sessions can be re-shown under the right tab).
+Entry point. Connects to iTerm2, bootstraps extensions, starts the HTTP server, registers `async_monitor` hooks for window/tab/session changes.
 
 ### `server/tree.py`
-Builds the snapshot. Reads iTerm2 state (windows, tabs, sessions, buried sessions), calls `_session_status` to get job/cwd/screen content, runs registered session enrichers, and returns a pure dict with no iTerm2 objects.
+Builds the snapshot. Reads iTerm2 state (windows, tabs, sessions), calls `_session_status` to get job/cwd/screen content, runs registered session enrichers, and returns a pure dict with no iTerm2 objects.
 
 ### `server/http.py`
 Minimal HTTP server (no framework). Routes:
@@ -69,15 +69,15 @@ Minimal HTTP server (no framework). Routes:
 - `GET /static/ext/<name>/*` → extension static assets
 
 ### `server/actions.py`
-Handles user-initiated actions (focus window/tab/pane, create tab/window, close session, bury/unbury, restore workspace). Returns `{"ok": true}` or `{"error": "..."}`. `restore_workspace` recreates persisted windows/tabs/panes and resumes Claude panes via `claude --resume`.
+Handles user-initiated actions (focus window/tab/pane, create tab/window, close session, restore workspace). Returns `{"ok": true}` or `{"error": "..."}`. `restore_workspace` recreates persisted windows/tabs/panes and resumes Claude panes via `claude --resume`.
 
 ### `server/persistence.py`
-Durable workspace state. Serializes the layout (windows → tabs → panes, each pane's cwd + Claude session id) plus `tab_names`/`buried_positions` to two files under `~/.config/iterm2-claude-cockpit/`:
+Durable workspace state. Serializes the layout (windows → tabs → panes, each pane's cwd + Claude session id) plus `tab_names` to two files under `~/.config/iterm2-claude-cockpit/`:
 
 - `state.json` — a rolling mirror of the *current* layout, rewritten on every `State.refresh()` (debounced, on change, ≥5s apart) via the executor.
 - `restore.json` — the *last-good* layout `POST /api/restore` rebuilds. The rolling save never writes it; `should_update_restore` only adopts the live layout when it is non-empty and either grows the saved one or the daemon has been up past `RESTORE_FREEZE_SECONDS`. This keeps the single-window layout iTerm2 relaunches with from overwriting the workspace before the user restores it.
 
-`State.__init__` loads `restore.json` (falling back to `state.json` for installs predating the split) into an in-memory `restore_snapshot`, seeds `tab_names`/`buried_positions` from it, and serves it to Restore — so Restore always recreates the *previous* session, not the current one as it evolves.
+`State.__init__` loads `restore.json` (falling back to `state.json` for installs predating the split) into an in-memory `restore_snapshot`, seeds `tab_names` from it, and serves it to Restore — so Restore always recreates the *previous* session, not the current one as it evolves.
 
 ### `extensions/_api.py`
 Defines `ExtensionAPI` (the v1 contract exposed to extensions) and `Registry` (the shared mutable container the core reads at request time). See `specs/extension-api.md`.

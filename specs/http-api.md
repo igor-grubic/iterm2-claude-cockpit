@@ -135,20 +135,6 @@ Set a custom display name for a tab. The name persists in the daemon's memory un
 
 ---
 
-### `POST /api/bury`
-
-Bury (hide without closing) or unbury a session.
-
-**Request body:** `application/json`
-
-```json
-{ "id": "<session id>", "bury": true | false }
-```
-
-**Response:** `200 application/json` — `{ "ok": true }` or `{ "error": "..." }`
-
----
-
 ### `POST /api/project`
 
 Open a named project layout from `iterm2_claude_cockpit/projects/<name>.yaml`.

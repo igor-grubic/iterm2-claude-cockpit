@@ -71,39 +71,6 @@ async def get_session_lines(app: iterm2.App, session_id: str, count: int = 10) -
         return {"ok": False, "error": str(exc)}
 
 
-async def unbury_session(connection: iterm2.Connection, app: iterm2.App, session_id: str) -> dict:
-    try:
-        buried = app.buried_sessions or []
-        session = next((s for s in buried if s.session_id == session_id), None)
-        if session is None:
-            return {"ok": False, "error": f"no buried session {session_id}"}
-        if hasattr(session, "async_unbury"):
-            await session.async_unbury()
-        else:
-            import iterm2.rpc
-
-            await iterm2.rpc.async_set_property(connection, "buried", "false", session_id=session_id)
-        return {"ok": True}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
-
-
-async def bury_session(connection: iterm2.Connection, app: iterm2.App, session_id: str) -> dict:
-    session = app.get_session_by_id(session_id)
-    if session is None:
-        return {"ok": False, "error": f"no session {session_id}"}
-    try:
-        if hasattr(session, "async_bury"):
-            await session.async_bury()
-        else:
-            import iterm2.rpc
-
-            await iterm2.rpc.async_set_property(connection, "buried", "true", session_id=session_id)
-        return {"ok": True}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
-
-
 async def split_pane(app: iterm2.App, session_id: str, vertical: bool) -> dict:
     session = app.get_session_by_id(session_id)
     if session is None:

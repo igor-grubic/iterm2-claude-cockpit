@@ -36,7 +36,7 @@ See `specs/architecture.md` for the full picture. Quick map:
 | `iterm2_claude_cockpit.py` | Daemon entry point; registers iTerm2 update hooks |
 | `server/tree.py` | Builds the JSON snapshot (window → tab → pane) |
 | `server/http.py` | Serves the panel HTML and `/api/*` routes |
-| `server/actions.py` | Handles user actions: focus, create, close, bury |
+| `server/actions.py` | Handles user actions: focus, create, close |
 | `extensions/_api.py` | `ExtensionAPI` and shared `Registry` (the v1 contract) |
 | `extensions/_signals.py` | TTY-keyed signal-file reader; feeds hook payloads to enrichers |
 | `extensions/_loader.py` | Loads enabled extensions at startup |

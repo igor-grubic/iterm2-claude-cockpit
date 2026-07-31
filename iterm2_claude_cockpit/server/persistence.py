@@ -2,9 +2,9 @@
 
 The daemon holds everything in memory and dies when iTerm2 closes. This module
 serializes a minimal layout snapshot (windows → tabs → panes, each pane's cwd and
-Claude session id) plus the in-memory `tab_names`/`buried_positions` to disk, so a
-later "Restore workspace" action can recreate the layout and resume each Claude
-pane via `claude --resume <session-id>`.
+Claude session id) plus the in-memory `tab_names` to disk, so a later "Restore
+workspace" action can recreate the layout and resume each Claude pane via
+`claude --resume <session-id>`.
 
 Two files are kept, side by side:
 
@@ -50,28 +50,21 @@ RESTORE_FREEZE_SECONDS = 600.0
 def build_state(
     snapshot: dict[str, Any],
     tab_names: dict[str, str],
-    buried_positions: dict[str, str],
 ) -> dict[str, Any]:
     """Build the persistable layout dict from the live snapshot (no timestamp).
 
     Derives entirely from the already-built snapshot — never re-walks iTerm2.
-    Buried panes are skipped in the windows tree (they aren't part of a restorable
-    live layout); `buried_positions` is persisted separately and verbatim.
 
     The result is deterministic, so callers can diff it to debounce writes.
     """
     windows: list[dict] = []
     live_tab_ids: set[str] = set()
-    live_pane_ids: set[str] = set()
     for window in snapshot.get("windows", []):
         tabs: list[dict] = []
         for tab in window.get("tabs", []):
             live_tab_ids.add(str(tab.get("id", "")))
             panes: list[dict] = []
             for pane in tab.get("panes", []):
-                live_pane_ids.add(str(pane.get("id", "")))
-                if pane.get("buried"):
-                    continue
                 # The ext.claude.* fields come from the opt-in `claude` extension.
                 # When it's disabled they're simply absent → claude:false,
                 # session_id:"" → the pane restores cwd-only. This dependency is
@@ -90,13 +83,12 @@ def build_state(
             tabs.append({"name": tab_names.get(tab.get("id", "")), "panes": panes})
         windows.append({"tabs": tabs})
 
-    # Prune metadata to ids still present in the live snapshot, so these dicts
-    # can't accumulate dead-tab/session keys forever across restarts.
+    # Prune tab_names to ids still present in the live snapshot, so it can't
+    # accumulate dead-tab keys forever across restarts.
     return {
         "version": STATE_VERSION,
         "windows": windows,
         "tab_names": {k: v for k, v in tab_names.items() if str(k) in live_tab_ids},
-        "buried_positions": {k: v for k, v in buried_positions.items() if str(k) in live_pane_ids},
     }
 
 
