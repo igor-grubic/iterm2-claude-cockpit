@@ -535,6 +535,13 @@ footer .row.icons { justify-content: flex-end; gap: 4px; }
   color: var(--fg);
 }
 
+.iterm-cheatsheet-body .cheatsheet-table code {
+  font: inherit;
+  color: var(--clr-running);
+  background: transparent;
+  padding: 0;
+}
+
 .iterm-cheatsheet-body .cheatsheet-table kbd {
   display: inline-block;
   font-family: inherit;
