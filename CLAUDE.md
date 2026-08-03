@@ -39,7 +39,6 @@ See `specs/architecture.md` for the full picture. Quick map:
 | `server/actions.py` | Handles user actions: focus, create, close, restore |
 | `server/persistence.py` | Saves/loads the workspace layout for session restore |
 | `webview/` | The browser-side panel (HTML/CSS/JS), incl. the Claude cheatsheet |
-| `projects/` | User-defined YAML project layouts |
 
 ---
 
@@ -104,7 +103,6 @@ There are no automated integration tests — iTerm2's runtime environment cannot
 1. `ruff check` + `ruff format --check` (lint/format)
 2. `mypy` (type checking)
 3. `python -m unittest discover -s tests` (stdlib unit tests — iterm2-free logic only)
-4. YAML validation for `iterm2_claude_cockpit/projects/*.yaml`
 
 Manual testing: install via symlink (see CONTRIBUTING.md), run the daemon, exercise the feature in iTerm2.
 

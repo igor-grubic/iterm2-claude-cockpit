@@ -47,30 +47,3 @@ jobs:
         # stdlib unittest only — these cover the iterm2-free logic (persistence
         # write policy, pane counting, transcript-dir encoding).
         run: python -m unittest discover -s tests -v
-
-  validate-yaml:
-    name: Validate project YAML
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - name: Install pyyaml
-        run: pip install pyyaml
-      - name: Validate
-        run: |
-          python - <<'EOF'
-          import yaml, pathlib, sys
-          errors = []
-          for f in pathlib.Path("iterm2_claude_cockpit/projects").glob("*.yaml"):
-              try:
-                  data = yaml.safe_load(f.read_text())
-                  assert isinstance(data, dict), f"{f}: expected a mapping"
-                  print(f"OK: {f.name}")
-              except (yaml.YAMLError, AssertionError) as e:
-                  errors.append(str(e))
-          if errors:
-              print("\n".join(errors), file=sys.stderr)
-              sys.exit(1)
-          EOF
