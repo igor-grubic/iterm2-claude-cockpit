@@ -15,10 +15,10 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 - Per-pane status popup: current job, working directory, recent terminal output
 - Click the folder pill to focus the pane; on the active pane, hover reveals "copy" and clicking copies its working directory to the clipboard
 - Create new tabs and windows from the panel
-- Session restore (⟲ button) — recreate your windows/tabs/panes after closing or updating iTerm2 and resume each Claude Code session via `claude --resume`
+- Session restore (⟲ button) — recreate your windows, tabs, and panes in their saved working directories after closing or updating iTerm2
+- Claude Code cheatsheet (✦ button) — a built-in quick reference of slash commands and keyboard shortcuts
 - YAML project layouts — define a named set of tabs and open them with one click
-- Settings panel (⚙ button) — shows the plugin version and installed extensions at a glance
-- Optional extensions — opt-in modules can enrich the snapshot, inject CSS/JS into the panel, and add HTTP routes (see [Extensions](#extensions))
+- Settings panel (⚙ button) — shows the plugin version at a glance
 - Zero external dependencies — stdlib only, beyond the `iterm2` library bundled with iTerm2
 - Runs as an AutoLaunch daemon; starts automatically with iTerm2
 
@@ -63,16 +63,6 @@ Cmd-Q, then reopen. Click **Allow** on the first-run API permission prompt. The 
 
 iTerm2 remembers both settings, so this is a one-time step.
 
-### 5. (Optional) Set up Claude Code status tracking
-
-The Claude extension is enabled by default. Run its interactive installer to wire up accurate `running` / `idle` / `attention` states via Claude Code hooks:
-
-```bash
-python3 ~/code/iterm2_claude_cockpit/iterm2_claude_cockpit/extensions/claude/hooks/install.py
-```
-
-The installer explains every change, shows a before/after diff, and asks for confirmation before touching anything. It backs up your existing `~/.claude/settings.json` first.
-
 ### Auto-open the panel in every new window (optional)
 
 `Settings → Profiles → [your profile] → Window → ☑ Open toolbelt`
@@ -95,7 +85,7 @@ bash ~/code/iterm2_claude_cockpit/uninstall.sh
 rm -rf ~/code/iterm2_claude_cockpit
 ```
 
-`uninstall.sh` removes only the AutoLaunch symlink; the repo and your Claude Code hook config are left untouched.
+`uninstall.sh` removes only the AutoLaunch symlink; the repo is left untouched.
 
 ### Migrating from a previous install
 
@@ -110,95 +100,19 @@ Also, if you see an old **Worktree** entry in the toolbelt menu, untick it and r
 
 ## Session restore
 
-Closing iTerm2 kills every pane and its processes, so in-progress work is normally lost — which makes quitting or updating iTerm2 risky. Session restore brings your workspace back.
+Closing iTerm2 kills every pane and its processes, so in-progress work is normally lost — which makes quitting or updating iTerm2 risky. Session restore brings your workspace layout back.
 
-As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory and — for Claude panes — its Claude Code session id) under `~/.config/iterm2-claude-cockpit/`. The Claude session id is captured from the same hook used for status tracking, so [Claude Code integration](#claude-code-integration) must be set up for resume to work.
+As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory) under `~/.config/iterm2-claude-cockpit/`.
 
 Two files are kept: `state.json` mirrors your *current* layout, while `restore.json` holds the *last-good* layout that Restore recreates. The split matters — when iTerm2 relaunches it usually comes back with a single window, and keeping that degraded layout out of `restore.json` is what lets Restore still bring back your full previous workspace.
 
-Click the **⟲ Restore** button in the footer (it shows a summary — how many windows, tabs, and panes — and confirms first) to recreate the saved windows, tabs, and panes. Each pane `cd`s back to its directory; Claude panes whose transcript still exists are resumed with `claude --resume <session-id>`. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive.
+Click the **⟲ Restore** button in the footer (it shows a summary — how many windows, tabs, and panes — and confirms first) to recreate the saved windows, tabs, and panes. Each pane comes back as a plain shell `cd`'d into its saved directory. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive. To pick a Claude conversation back up, run `claude --continue` (or `claude --resume`) in the restored pane.
 
-> **Requires the `claude` extension for resume.** Identifying Claude panes and capturing their session id is done by the bundled [`claude` extension](#extensions), which is enabled by default. With it disabled (`ext disable claude`), Restore still recreates your full window/tab/pane layout in the right working directories, but treats every pane as a plain shell — it won't resume any Claude session. Restoring the layout (without resume) does not require the extension.
-
-What it does **not** restore: any turn that was mid-execution when iTerm2 closed (the resumed session picks up from the last completed turn), terminal scrollback, non-Claude process state (dev servers, builds), and exact split sizes (panes come back as a simple vertical split). Custom tab names are persisted in the same file and also survive restarts.
+What it does **not** restore: running processes (Claude sessions, dev servers, builds — panes come back as a plain shell), terminal scrollback, and exact split sizes (panes come back as a simple vertical split). Custom tab names are persisted in the same file and also survive restarts.
 
 ## Project layouts
 
 Define a named set of tabs in `iterm2_claude_cockpit/projects/example.yaml` and open them from the panel. See [`iterm2_claude_cockpit/projects/example.yaml`](iterm2_claude_cockpit/projects/example.yaml) for the format.
-
-## Extensions
-
-The core panel is a generic pane manager. Anything Claude-specific (or other "goodies") lives in opt-in extensions under `iterm2_claude_cockpit/extensions/`.
-
-```bash
-# from the repo / install root:
-python3 -m iterm2_claude_cockpit ext list
-python3 -m iterm2_claude_cockpit ext enable claude
-python3 -m iterm2_claude_cockpit ext disable claude
-```
-
-After enabling or disabling, restart iTerm2 — the toolbelt webview is loaded once on startup and does not hot-reload.
-
-### Bundled extensions
-
-- **claude** — detects Claude Code panes via a `ps -t <tty>` process check, tags them in the snapshot as `ext.claude.{active,state,action_needed}`, and decorates them in the panel (accent color, ❗ attention badge, blue plan-mode tint). Status is driven by Claude Code hook signal files; see [Claude Code integration](#claude-code-integration) for setup.
-
-#### Claude Code integration
-
-For accurate `running` / `idle` / `attention` states, run the interactive installer once:
-
-```bash
-python3 /path/to/iterm2_claude_cockpit/extensions/claude/hooks/install.py
-```
-
-The installer explains every change it will make, shows before/after for each hook entry, and asks for confirmation before touching anything. It writes a `.bak` of your existing `~/.claude/settings.json` before modifying it.
-
-<details>
-<summary>What the installer adds (manual alternative)</summary>
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {"hooks": [{"type": "command", "command": "/path/to/iterm2_claude_cockpit/extensions/claude/hooks/notify.sh running"}]}
-    ],
-    "Stop": [
-      {"hooks": [{"type": "command", "command": "/path/to/iterm2_claude_cockpit/extensions/claude/hooks/notify.sh idle"}]}
-    ],
-    "Notification": [
-      {"hooks": [{"type": "command", "command": "/path/to/iterm2_claude_cockpit/extensions/claude/hooks/notify.sh attention"}]}
-    ]
-  }
-}
-```
-</details>
-
-To remove the hooks later:
-
-```bash
-python3 /path/to/iterm2_claude_cockpit/extensions/claude/hooks/uninstall.py
-```
-
-Without hooks, panes where `claude` is the foreground process still show as active (amber) but state will default to `running` throughout the session.
-
-### Authoring an extension
-
-Create `iterm2_claude_cockpit/extensions/<name>/__init__.py` exposing `register(api)`. The API (v1) lets you:
-
-- `api.add_session_enricher(fn)` — add fields to each session node before serialization. `fn(session, node, ps_output, screen_lines, signals=None)` may be sync or async; return a dict to merge or mutate `node` in place. Use the `ext.<name>.<field>` namespace for new keys.
-- `api.add_signal_dir_source(name, directory)` — register a directory of TTY-keyed JSON signal files written by in-pane hook scripts; the parsed payloads are passed to enrichers via the `signals` kwarg.
-- `api.add_static_dir(path)` — serve a directory at `/static/ext/<name>/...`.
-- `api.add_webview_asset("css"|"js", relpath)` — inject a `<link>` or `<script>` tag into the panel HTML.
-- `api.add_route("GET"|"POST", path, handler)` — handle `/api/ext/<name>/<path>`. Async handlers run on the iTerm2 event loop.
-- `api.add_action(name, handler)` — sugar for `add_route("POST", name, ...)`.
-
-The webview exposes a small registry on `window.PaneTreeExt`:
-
-- `paneRowDecorators: ((row, node) => void)[]`
-- `paneTitleDecorators: ((label, node) => void)[]`
-- `shouldShowJob: ((node) => boolean)[]` — return false to hide the job badge for a pane
-
-Extension JS is loaded after `app.js`, so the registry exists when your script runs. See `iterm2_claude_cockpit/extensions/claude/` for a complete example.
 
 ## Troubleshooting
 
@@ -259,18 +173,6 @@ In iTerm2 3.6+ the global `OpenToolbelt` defaults key is overridden by per-profi
 ### Log paths show `~/.config/iterm2/AppSupport/Scripts/...` even though I used `~/Library/Application Support/...`
 
 iTerm2 3.6+ moved its support directory to an XDG-style path. The legacy `~/Library/Application Support/iTerm2/` location symlinks transparently to the new one — both work, the different path in logs is expected.
-
----
-
-### Restore opened the panes but Claude didn't resume
-
-Restore recreates every pane's directory, but it only runs `claude --resume` when it can find the session. Common causes:
-
-- **The `claude` extension is disabled.** Capturing Claude session ids is done by the bundled `claude` extension; with it disabled (`ext disable claude`) no pane is recognized as Claude, so Restore recreates the layout + directories only. Re-enable it (`ext enable claude`) and restart iTerm2.
-- **No saved session id.** The Claude session id is captured by the status hook — if [Claude Code integration](#claude-code-integration) isn't installed, restore has nothing to resume and brings panes back as a plain shell. Set up the hook and re-run a turn so the session is recorded.
-- **Transcript missing.** Sessions older than your Claude `cleanupPeriodDays` setting (default 30) are deleted, and so is the ability to resume them. Restore falls back to just `cd`-ing into the directory (counted as `skipped`).
-- **`claude` not on `PATH` / not logged in.** The pane runs `claude --resume …` in your shell; if `claude` isn't found or you're logged out, you'll see the shell error or a login prompt in the right directory.
-- **In-flight turn not continued.** A turn that was mid-execution when iTerm2 closed is gone; the resumed session starts from the last completed turn.
 
 ## Contributing
 

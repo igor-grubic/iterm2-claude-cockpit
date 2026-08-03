@@ -6,7 +6,7 @@ The daemon listens on `127.0.0.1:9876`. All endpoints are local-only.
 
 ### `GET /`
 
-Returns the panel HTML (`webview/index.html` with extension assets injected).
+Returns the panel HTML (`webview/index.html`).
 
 **Response:** `200 text/html`
 
@@ -14,22 +14,15 @@ Returns the panel HTML (`webview/index.html` with extension assets injected).
 
 ### `GET /api/about`
 
-Returns the plugin version and the list of extensions (both enabled and available).
+Returns the plugin version.
 
 **Response:** `200 application/json`
 
 ```json
 {
-  "version": "0.1.0",
-  "extensions": {
-    "enabled": ["claude"],
-    "available": ["claude"]
-  }
+  "version": "0.1.0"
 }
 ```
-
-`enabled` — extensions currently active (from `extensions.json`).  
-`available` — all extensions found on disk (superset of `enabled`).
 
 ---
 
@@ -156,28 +149,26 @@ Summarize what `POST /api/restore` would recreate, read from the in-memory saved
 **Response:** `200 application/json`
 
 ```json
-{ "ok": true, "windows": 3, "tabs": 8, "panes": 14, "claude": 3 }
+{ "ok": true, "windows": 3, "tabs": 8, "panes": 14 }
 ```
 
-`windows`/`tabs`/`panes` — totals that would be recreated. `claude` — how many of those panes were flagged as Claude (informational; actual resumes depend on transcripts still existing). Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
+`windows`/`tabs`/`panes` — totals that would be recreated. Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
 
 ---
 
 ### `POST /api/restore`
 
-Recreate the last saved workspace (see "Session restore" in the README). Reads the persisted layout from `~/.config/iterm2-claude-cockpit/restore.json` — the last-good snapshot, kept separate from the rolling `state.json` mirror so a relaunch can't overwrite it — and creates fresh windows/tabs/panes, sending `cd <cwd>` into each pane and `claude --resume <session-id>` into Claude panes whose transcript still exists and that aren't already open. Always creates new windows; it never modifies existing ones. Takes no request body.
+Recreate the last saved workspace (see "Session restore" in the README). Reads the persisted layout from `~/.config/iterm2-claude-cockpit/restore.json` — the last-good snapshot, kept separate from the rolling `state.json` mirror so a relaunch can't overwrite it — and creates fresh windows/tabs/panes, sending `cd <cwd>` into each pane so it comes back as a plain shell in its saved directory. Always creates new windows; it never modifies existing ones. Takes no request body.
 
 **Response:** `200 application/json`
 
 ```json
-{ "ok": true, "restored": 5, "resumed": 3, "skipped": 1 }
+{ "ok": true, "restored": 5 }
 ```
 
-`restored` — panes recreated. `resumed` — Claude sessions resumed via `claude --resume`. `skipped` — Claude panes recreated as a plain shell because the session was already open or its transcript was gone. If one or more windows fail to recreate, restore continues with the rest and includes an `errors` array (e.g. `"errors": ["window 2: ..."]`) alongside `"ok": true` with the counts that succeeded. Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
+`restored` — panes recreated. If one or more windows fail to recreate, restore continues with the rest and includes an `errors` array (e.g. `"errors": ["window 2: ..."]`) alongside `"ok": true` with the count that succeeded. Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
 
 The restored workspace is the layout as it was during the *previous* daemon session (loaded into memory from `restore.json` at startup), not the freshly relaunched layout. `restore.json` is shrink-frozen for `RESTORE_FREEZE_SECONDS` after launch, so the single-window layout iTerm2 comes back with cannot wipe the snapshot before Restore is used.
-
-`resumed`/`skipped` are non-zero only when the bundled `claude` extension is enabled — it supplies the `ext.claude.active`/`ext.claude.session_id` fields the restore logic reads. With it disabled, every pane is restored cwd-only (layout restore itself is extension-independent).
 
 ---
 
@@ -185,23 +176,7 @@ The restored workspace is the layout as it was during the *previous* daemon sess
 
 ### `GET /static/<path>`
 
-Serves files from `iterm2_claude_cockpit/webview/`. Used by the panel for `app.js`, `styles.css`, etc.
-
-### `GET /static/ext/<name>/<path>`
-
-Serves files from a registered extension static directory. Only available if the extension called `api.add_static_dir(...)`.
-
----
-
-## Extension routes
-
-### `GET|POST /api/ext/<name>/<path>`
-
-Handled by the extension that registered the route via `api.add_route(...)` or `api.add_action(...)`.
-
-**Request body:** raw bytes passed to the handler.
-
-**Response:** The handler's return value serialized as JSON, `200 application/json`.
+Serves files from `iterm2_claude_cockpit/webview/`. Used by the panel for `app.js`, `styles.css`, `iterm_cheatsheet.html`, and `claude_cheatsheet.html`.
 
 ---
 

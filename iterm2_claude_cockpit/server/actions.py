@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import shlex
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import iterm2
@@ -104,44 +102,13 @@ async def move_tab(app: iterm2.App, window_id: str, tab_id: str, position: int) 
     return {"ok": True}
 
 
-def _transcript_exists(cwd: str, session_id: str) -> bool:
-    """True if Claude Code has a saved transcript for this cwd + session id.
+def build_launch_line(cwd: str) -> str:
+    """The shell line to send into a restored pane (empty if there's no cwd).
 
-    Claude stores transcripts at ~/.claude/projects/<encoded-cwd>/<id>.jsonl,
-    where the cwd is encoded by replacing every non-alphanumeric character with
-    "-" (no collapsing of runs — so "/a/.b" → "-a--b").
+    Restore recreates the layout and brings each pane back as a plain shell in
+    its saved working directory.
     """
-    if not cwd or not session_id:
-        return False
-    encoded = re.sub(r"[^a-zA-Z0-9]", "-", cwd)
-    return (Path.home() / ".claude" / "projects" / encoded / f"{session_id}.jsonl").is_file()
-
-
-def build_launch_line(cwd: str, session_id: str, resume: bool) -> str:
-    """The shell line to send into a restored pane (empty if nothing to do).
-
-    Resumes Claude only when `resume` is set; otherwise just restores the cwd so
-    non-Claude panes (and Claude panes whose transcript is gone) come up as a
-    plain shell in the right directory.
-    """
-    parts: list[str] = []
-    if cwd:
-        parts.append(f"cd {shlex.quote(cwd)}")
-    if resume and session_id:
-        parts.append(f"claude --resume {session_id}")
-    return (" && ".join(parts) + "\n") if parts else ""
-
-
-def _live_claude_session_ids(snapshot: dict) -> set[str]:
-    """Claude session ids currently open, so restore never double-resumes one."""
-    ids: set[str] = set()
-    for window in snapshot.get("windows", []):
-        for tab in window.get("tabs", []):
-            for pane in tab.get("panes", []):
-                sid = pane.get("ext.claude.session_id")
-                if sid:
-                    ids.add(sid)
-    return ids
+    return f"cd {shlex.quote(cwd)}\n" if cwd else ""
 
 
 async def restore_workspace(
@@ -150,21 +117,16 @@ async def restore_workspace(
     state_data: dict,
     state: State,
 ) -> dict:
-    """Recreate persisted windows/tabs/panes and resume each Claude session.
+    """Recreate persisted windows/tabs/panes, each as a shell in its saved cwd.
 
     Always creates fresh windows — it never touches existing ones — so the user
-    controls when to bring a workspace back. Each Claude pane whose transcript
-    still exists (and isn't already open) is resumed via `claude --resume`; every
-    other pane is recreated as a shell in its saved cwd.
+    controls when to bring a workspace back.
     """
     windows_data = state_data.get("windows", []) if isinstance(state_data, dict) else []
     if not windows_data:
         return {"ok": False, "error": "no saved workspace"}
 
-    live_ids = _live_claude_session_ids(state.get_snapshot())
     restored = 0  # panes recreated
-    resumed = 0  # Claude sessions resumed
-    skipped = 0  # Claude panes recreated cwd-only (already open or transcript gone)
     errors: list[str] = []
 
     for win_idx, win in enumerate(windows_data):
@@ -190,18 +152,10 @@ async def restore_workspace(
                     session = first_session if pane_idx == 0 else await first_session.async_split_pane(vertical=True)
                     if session is None:
                         continue
-                    cwd = pane.get("cwd", "")
-                    sid = pane.get("session_id", "")
-                    is_claude = bool(pane.get("claude"))
-                    resume = is_claude and _transcript_exists(cwd, sid) and sid not in live_ids
-                    if is_claude and not resume:
-                        skipped += 1
-                    line = build_launch_line(cwd, sid, resume)
+                    line = build_launch_line(pane.get("cwd", ""))
                     if line:
                         await asyncio.sleep(0.15)  # let the shell prompt appear before typing
                         await session.async_send_text(line)
-                    if resume:
-                        resumed += 1
                     restored += 1
 
                 name = tab_data.get("name")
@@ -212,7 +166,7 @@ async def restore_workspace(
             errors.append(f"window {win_idx + 1}: {exc}")
             continue
 
-    result: dict = {"ok": True, "restored": restored, "resumed": resumed, "skipped": skipped}
+    result: dict = {"ok": True, "restored": restored}
     if errors:
         result["errors"] = errors
     return result

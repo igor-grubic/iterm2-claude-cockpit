@@ -1,14 +1,7 @@
-window.PaneTreeExt = window.PaneTreeExt || {
-  paneRowDecorators: [],
-  paneTitleDecorators: [],
-  shouldShowJob: [],
-};
-
 (() => {
   const treeEl = document.getElementById("tree");
   const statusEl = document.getElementById("status");
   const collapsed = new Set();
-  const ext = window.PaneTreeExt;
 
   const IDLE_JOBS = new Set(["zsh", "-zsh", "bash", "-bash", "sh", "-sh", "fish", "-fish"]);
   function isIdle(job) { return !job || IDLE_JOBS.has(job); }
@@ -236,14 +229,8 @@ window.PaneTreeExt = window.PaneTreeExt || {
     label.className = "pane-title";
     label.textContent = p.session_name || p.title || p.id;
     row.appendChild(label);
-    for (const fn of ext.paneTitleDecorators) {
-      try { fn(label, p); } catch (e) { console.error("paneTitleDecorator error", e); }
-    }
 
-    const showJob = p.job && ext.shouldShowJob.every((fn) => {
-      try { return fn(p); } catch (e) { console.error("shouldShowJob error", e); return true; }
-    });
-    if (showJob) {
+    if (p.job) {
       const job = document.createElement("span");
       job.className = "node-job";
       job.textContent = p.job;
@@ -284,9 +271,6 @@ window.PaneTreeExt = window.PaneTreeExt || {
     row.appendChild(closeBtn);
 
     row.addEventListener("click", () => focusNode(p.kind, p.id));
-    for (const fn of ext.paneRowDecorators) {
-      try { fn(row, p); } catch (e) { console.error("paneRowDecorator error", e); }
-    }
     return row;
   }
 
@@ -446,13 +430,6 @@ window.PaneTreeExt = window.PaneTreeExt || {
 
     popup.append(title, counts);
 
-    if (summary.claude) {
-      const note = document.createElement("div");
-      note.className = "restore-confirm-note";
-      note.textContent = `includes ${plural(summary.claude, "Claude pane")}`;
-      popup.append(note);
-    }
-
     const actions = document.createElement("div");
     actions.className = "restore-confirm-actions";
     const yes = document.createElement("button");
@@ -554,6 +531,19 @@ window.PaneTreeExt = window.PaneTreeExt || {
     });
   }
 
+  let claudeCheatsheetCache = null;
+
+  async function openClaudeCheatsheet() {
+    await openModal("Claude Code cheatsheet", async (body) => {
+      if (claudeCheatsheetCache === null) {
+        const res = await fetch("/static/claude_cheatsheet.html", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        claudeCheatsheetCache = await res.text();
+      }
+      body.innerHTML = claudeCheatsheetCache;
+    });
+  }
+
   async function openSettings() {
     await openModal("Settings", async (body) => {
       const res = await fetch("/api/about", { cache: "no-store" });
@@ -572,11 +562,6 @@ window.PaneTreeExt = window.PaneTreeExt || {
       };
 
       addRow("Version", data.version || "(unknown)");
-      const enabled = data.extensions?.enabled || [];
-      addRow("Enabled extensions", enabled.length ? enabled.join(", ") : "(none)");
-      const available = data.extensions?.available || [];
-      const disabled = available.filter((n) => !enabled.includes(n));
-      addRow("Available (disabled)", disabled.length ? disabled.join(", ") : "(none)");
 
       body.innerHTML = "";
       body.appendChild(dl);
@@ -586,6 +571,11 @@ window.PaneTreeExt = window.PaneTreeExt || {
   document.getElementById("btn-cheatsheet").addEventListener("click", (ev) => {
     ev.stopPropagation();
     openItermCheatsheet();
+  });
+
+  document.getElementById("btn-claude").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    openClaudeCheatsheet();
   });
 
   document.getElementById("btn-settings").addEventListener("click", (ev) => {
@@ -602,10 +592,7 @@ window.PaneTreeExt = window.PaneTreeExt || {
       const data = await res.json();
       if (!data.ok) { toast(data.error || "restore failed", false); return; }
       const n = data.restored || 0;
-      let msg = `restored ${n} pane${n === 1 ? "" : "s"}`;
-      if (data.resumed) msg += `, resumed ${data.resumed}`;
-      if (data.skipped) msg += `, skipped ${data.skipped}`;
-      toast(msg);
+      toast(`restored ${n} pane${n === 1 ? "" : "s"}`);
     } catch (e) {
       toast("restore error: " + e, false);
     } finally {

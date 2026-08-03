@@ -78,34 +78,6 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
 | `cwd` | string | Current working directory, empty if unknown |
 | `tty` | string | Controlling TTY path (e.g. `/dev/ttys003`), empty if unknown |
 
-## Extension fields
-
-Extensions may add fields to session nodes. All extension fields must use the `ext.<name>.<field>` namespace:
-
-```json
-{
-  "kind": "session",
-  "id": "...",
-  ...
-  "ext.claude.active": true
-}
-```
-
-The core never writes `ext.*` keys. The webview JS must treat unknown `ext.*` keys as opt-in — never assume an extension is enabled.
-
-### Bundled: `ext.claude.*`
-
-Written by the `claude` extension when Claude Code is detected on a pane.
-
-| Field | Type | Values | Description |
-|-------|------|--------|-------------|
-| `ext.claude.active` | boolean | — | True if a `claude`/`claude-code` process is attached to this pane's TTY |
-| `ext.claude.state` | string | `idle`, `running`, `attention`, `plan` | Current Claude session state |
-| `ext.claude.action_needed` | boolean | — | Derived: `true` iff `state == "attention"` |
-| `ext.claude.session_id` | string | — | Claude Code session UUID, used to resume the pane via `claude --resume`; empty until the first hook fires or if unknown |
-
-State transitions are driven by Claude Code hook signal files (see `hooks/notify.sh`). The `plan` state is detected via a narrow screen-scrape of the plan-mode banner. `ext.claude.session_id` is captured from the hook payload and consumed by the workspace-restore feature.
-
 ## Invariants
 
 - Every node has a `kind` field; the webview uses it as a discriminator

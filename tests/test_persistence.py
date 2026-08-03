@@ -54,20 +54,5 @@ class ShouldUpdateRestoreTest(unittest.TestCase):
         self.assertFalse(persistence.should_update_restore(1, 2, uptime_seconds=0.0))
 
 
-class TranscriptEncodingTest(unittest.TestCase):
-    """The encoding `restore_workspace` uses to find Claude transcripts must match
-    Claude's own: every non-alphanumeric char replaced with '-', no run collapsing.
-    """
-
-    def test_encoding_matches_claude_for_dotted_and_underscored_paths(self) -> None:
-        import re
-
-        cwd = "/Users/me/code/my.project_dir with space"
-        expected = re.sub(r"[^a-zA-Z0-9]", "-", cwd)
-        # A naive replace("/", "-") would miss '.', '_' and the space — assert ours doesn't.
-        self.assertNotEqual(cwd.replace("/", "-"), expected)
-        self.assertEqual(re.sub(r"[^a-zA-Z0-9]", "-", cwd), expected)
-
-
 if __name__ == "__main__":
     unittest.main()

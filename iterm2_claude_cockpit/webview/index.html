@@ -2,9 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Worktree</title>
+  <title>Claude Cockpit</title>
   <link rel="stylesheet" href="/static/styles.css" />
-  <!-- ext:css -->
 </head>
 <body>
   <main>
@@ -23,16 +22,18 @@
       <button id="btn-cheatsheet" type="button" class="icon-btn" title="iTerm cheatsheet">
         <span class="icon-btn-glyph">▤</span><span class="icon-btn-label">iTerm</span>
       </button>
+      <button id="btn-claude" type="button" class="icon-btn" title="Claude Code cheatsheet">
+        <span class="icon-btn-glyph">✦</span><span class="icon-btn-label">Claude</span>
+      </button>
       <button id="btn-settings" type="button" class="icon-btn" title="Settings">
         <span class="icon-btn-glyph">⚙</span><span class="icon-btn-label">Settings</span>
       </button>
-      <button id="btn-restore" type="button" class="icon-btn" title="Restore last saved workspace — recreates panes and resumes Claude sessions">
+      <button id="btn-restore" type="button" class="icon-btn" title="Restore last saved workspace — recreates your windows, tabs, and panes in their saved directories">
         <span class="icon-btn-glyph">⟲</span><span class="icon-btn-label">Restore</span>
       </button>
     </div>
     <div class="status hidden" id="status"></div>
   </footer>
   <script src="/static/app.js"></script>
-  <!-- ext:js -->
 </body>
 </html>

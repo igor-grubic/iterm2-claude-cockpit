@@ -6,7 +6,7 @@ This file is the authoritative guide for AI agents (Claude Code and others) work
 
 ## Project in one sentence
 
-`iterm2-claude-cockpit` is a zero-dependency iTerm2 AutoLaunch daemon (Basic-script .py symlinked into `Scripts/AutoLaunch/`) that serves a live window/tab/pane tree as a toolbelt cockpit, with first-class support for managing parallel Claude Code panes via a bundled extension.
+`iterm2-claude-cockpit` is a zero-dependency iTerm2 AutoLaunch daemon (Basic-script .py symlinked into `Scripts/AutoLaunch/`) that serves a live window/tab/pane tree as a toolbelt cockpit, purpose-built for managing parallel Claude Code panes.
 
 ---
 
@@ -36,12 +36,9 @@ See `specs/architecture.md` for the full picture. Quick map:
 | `iterm2_claude_cockpit.py` | Daemon entry point; registers iTerm2 update hooks |
 | `server/tree.py` | Builds the JSON snapshot (window → tab → pane) |
 | `server/http.py` | Serves the panel HTML and `/api/*` routes |
-| `server/actions.py` | Handles user actions: focus, create, close |
-| `extensions/_api.py` | `ExtensionAPI` and shared `Registry` (the v1 contract) |
-| `extensions/_signals.py` | TTY-keyed signal-file reader; feeds hook payloads to enrichers |
-| `extensions/_loader.py` | Loads enabled extensions at startup |
-| `extensions/claude/` | Bundled Claude-detection extension |
-| `webview/` | The browser-side panel (HTML/CSS/JS) |
+| `server/actions.py` | Handles user actions: focus, create, close, restore |
+| `server/persistence.py` | Saves/loads the workspace layout for session restore |
+| `webview/` | The browser-side panel (HTML/CSS/JS), incl. the Claude cheatsheet |
 | `projects/` | User-defined YAML project layouts |
 
 ---
@@ -68,7 +65,6 @@ The changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) f
 - Every user-visible change goes under `## [Unreleased]` before a release
 - Use subsections: `### Added`, `### Changed`, `### Fixed`, `### Removed`
 - One bullet per change, written for a user, not a developer ("Added X" not "Implement X")
-- Extension changes go under `Added` (new extensions) or `Changed` (modifications to existing ones)
 - Do not touch dated version sections unless doing a release
 
 **When to update:** Any time you add a feature, fix a bug visible to users, or change user-facing behavior. Internal refactors with no observable effect don't need a changelog entry.
@@ -80,23 +76,10 @@ The changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) f
 The README is the public face. Keep these sections up to date:
 
 - **Features list** — add a bullet if you add a user-visible capability
-- **Extensions → Bundled extensions** — update when adding/modifying extensions
-- **Extensions → Authoring an extension** — update if the `ExtensionAPI` surface changes
 - **Troubleshooting** — add an entry for any new failure mode with a known fix
 - **Badges** — do not change the badge URLs; they point to the live CI and shields.io
 
 The Python version badge must reflect `requires-python` in `pyproject.toml`. Both are currently `3.10+`.
-
----
-
-## Extension authoring rules
-
-- Extensions live in `iterm2_claude_cockpit/extensions/<name>/__init__.py`
-- Must expose `register(api: ExtensionAPI) -> None`
-- Use `ext.<name>.<field>` namespace for all snapshot keys — never write top-level keys
-- Register in `iterm2_claude_cockpit/extensions.json` to appear in `ext list`
-- See `specs/extension-api.md` for the full v1 API contract
-- The `claude` extension is the canonical worked example
 
 ---
 
@@ -108,10 +91,9 @@ The Python version badge must reflect `requires-python` in `pyproject.toml`. Bot
 |------|----------------|
 | `specs/architecture.md` | System architecture, data flow, module responsibilities |
 | `specs/snapshot-format.md` | The JSON tree snapshot schema (all fields, types, invariants) |
-| `specs/extension-api.md` | Extension API v1 full contract |
 | `specs/http-api.md` | All HTTP endpoints, request/response shapes |
 
-**When to update specs:** Whenever the contract described in a spec file changes. A spec going out of sync with the code is a bug. If you change `_api.py`, update `specs/extension-api.md`. If you add an HTTP route, update `specs/http-api.md`.
+**When to update specs:** Whenever the contract described in a spec file changes. A spec going out of sync with the code is a bug. If you add an HTTP route, update `specs/http-api.md`. If you change the snapshot shape, update `specs/snapshot-format.md`.
 
 ---
 
@@ -132,7 +114,7 @@ When adding logic that doesn't depend on the iTerm2 runtime (e.g., parsing, data
 
 ## Commits and PRs
 
-- Branch names: `<type>/<short-description>` (e.g., `feat/extension-badges`, `fix/bury-crash`)
+- Branch names: `<type>/<short-description>` (e.g., `feat/session-restore`, `fix/tab-rename`)
 - Commit messages: imperative mood, present tense ("Add X", not "Added X")
 - PR checklist (also in `.github/pull_request_template.md`):
   - `ruff check` passes
@@ -147,7 +129,6 @@ When adding logic that doesn't depend on the iTerm2 runtime (e.g., parsing, data
 ## What NOT to do
 
 - Do not add external runtime dependencies (anything beyond `iterm2` and stdlib) — the script runs with iTerm2's bundled Python (no per-script venv)
-- Do not write top-level snapshot keys from an extension — use `ext.<name>.<field>`
 - Do not commit `iterm2env/` or anything under `iterm2env-*/` (gitignored for a reason)
 - Do not push directly to `main` — open a PR
 - Do not let this file exceed 200 lines — keep it scannable; move detail into `specs/`
