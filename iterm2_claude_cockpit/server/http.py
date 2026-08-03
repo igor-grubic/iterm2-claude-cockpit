@@ -59,7 +59,6 @@ class State:
         self.loop = loop
         self.registry: Registry = registry if registry is not None else Registry()
         self.snapshot: dict[str, Any] = {"windows": []}
-        self.buried_positions: dict[str, str] = {}  # session_id → tab_id
         self.tab_names: dict[str, str] = {}  # tab_id → custom name
         self.lock = threading.Lock()
         # Set True while a structural write (e.g. move-tab) is in flight to prevent
@@ -80,29 +79,25 @@ class State:
             restore = persistence.load_state()
         self.restore_snapshot: dict[str, Any] | None = restore
         self._restore_pane_count: int = persistence.count_panes(restore)
-        # Seed in-memory metadata from it so custom tab names and buried positions
-        # survive a daemon restart (correct when iTerm2 stayed up; harmlessly ignored
-        # when its ids are stale after a full iTerm2 restart).
+        # Seed in-memory metadata from it so custom tab names survive a daemon
+        # restart (correct when iTerm2 stayed up; harmlessly ignored when its ids
+        # are stale after a full iTerm2 restart).
         if self.restore_snapshot:
             self.tab_names = {str(k): str(v) for k, v in (self.restore_snapshot.get("tab_names") or {}).items()}
-            self.buried_positions = {
-                str(k): str(v) for k, v in (self.restore_snapshot.get("buried_positions") or {}).items()
-            }
 
     async def refresh(self) -> None:
         with self.lock:
-            buried_pos = dict(self.buried_positions)
             tab_names = dict(self.tab_names)
         try:
-            snap = await tree.build_tree(self.app, buried_pos, self.registry, tab_names)
+            snap = await tree.build_tree(self.app, self.registry, tab_names)
         except Exception as exc:
             log.exception("tree build failed: %s", exc)
             return
         with self.lock:
             self.snapshot = snap
-        self._maybe_persist(snap, tab_names, buried_pos)
+        self._maybe_persist(snap, tab_names)
 
-    def _maybe_persist(self, snap: dict[str, Any], tab_names: dict[str, str], buried_pos: dict[str, str]) -> None:
+    def _maybe_persist(self, snap: dict[str, Any], tab_names: dict[str, str]) -> None:
         """Persist workspace state to disk, debounced and only when it changed.
 
         Runs the disk write on the default executor so it never blocks the loop.
@@ -111,7 +106,7 @@ class State:
         if now - self._last_persist_ts < _PERSIST_DEBOUNCE_SECONDS:
             return
         try:
-            data = persistence.build_state(snap, tab_names, buried_pos)
+            data = persistence.build_state(snap, tab_names)
             sig = json.dumps(data, sort_keys=True)
         except Exception:
             log.exception("building persist state failed")
@@ -340,25 +335,6 @@ class _Handler(BaseHTTPRequestHandler):
                     lambda: actions.restore_workspace(self.state.connection, self.state.app, data, self.state),
                     timeout=60.0,
                 )
-                self._send_json(result)
-                return
-            if path == "/api/bury-session":
-                sid = body.get("id", "")
-                tab_id = body.get("tab_id", "")
-                result = self.state.call_async(lambda: actions.bury_session(self.state.connection, self.state.app, sid))
-                if result.get("ok"):
-                    with self.state.lock:
-                        self.state.buried_positions[sid] = tab_id
-                self._send_json(result)
-                return
-            if path == "/api/unbury-session":
-                sid = body.get("id", "")
-                result = self.state.call_async(
-                    lambda: actions.unbury_session(self.state.connection, self.state.app, sid)
-                )
-                if result.get("ok"):
-                    with self.state.lock:
-                        self.state.buried_positions.pop(sid, None)
                 self._send_json(result)
                 return
             if path == "/api/split-pane":

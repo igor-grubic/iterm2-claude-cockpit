@@ -15,7 +15,6 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 - Per-pane status popup: current job, working directory, recent terminal output
 - Click the folder pill to focus the pane; on the active pane, hover reveals "copy" and clicking copies its working directory to the clipboard
 - Create new tabs and windows from the panel
-- Bury and unbury sessions (hide a running pane without closing it)
 - Session restore (⟲ button) — recreate your windows/tabs/panes after closing or updating iTerm2 and resume each Claude Code session via `claude --resume`
 - YAML project layouts — define a named set of tabs and open them with one click
 - Settings panel (⚙ button) — shows the plugin version and installed extensions at a glance
@@ -121,7 +120,7 @@ Click the **⟲ Restore** button in the footer (it shows a summary — how many 
 
 > **Requires the `claude` extension for resume.** Identifying Claude panes and capturing their session id is done by the bundled [`claude` extension](#extensions), which is enabled by default. With it disabled (`ext disable claude`), Restore still recreates your full window/tab/pane layout in the right working directories, but treats every pane as a plain shell — it won't resume any Claude session. Restoring the layout (without resume) does not require the extension.
 
-What it does **not** restore: any turn that was mid-execution when iTerm2 closed (the resumed session picks up from the last completed turn), terminal scrollback, non-Claude process state (dev servers, builds), and exact split sizes (panes come back as a simple vertical split). Custom tab names and buried-pane positions are persisted in the same file and also survive restarts.
+What it does **not** restore: any turn that was mid-execution when iTerm2 closed (the resumed session picks up from the last completed turn), terminal scrollback, non-Claude process state (dev servers, builds), and exact split sizes (panes come back as a simple vertical split). Custom tab names are persisted in the same file and also survive restarts.
 
 ## Project layouts
 

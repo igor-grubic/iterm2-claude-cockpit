@@ -216,7 +216,7 @@ window.PaneTreeExt = window.PaneTreeExt || {
 
   function renderPane(p, tabId) {
     const row = document.createElement("div");
-    row.className = "node pane" + (p.active ? " active" : "") + (p.buried ? " buried" : "");
+    row.className = "node pane" + (p.active ? " active" : "");
     if (p.last_line) row.title = p.last_line;
 
     // Left action buttons — fixed at window-level left edge, always visible
@@ -228,15 +228,7 @@ window.PaneTreeExt = window.PaneTreeExt || {
     statusBtn.setAttribute("title", idle ? "Status — idle" : `Status — ${p.job}`);
     statusBtn.classList.add(idle ? "action-idle" : "action-running");
 
-    if (p.buried) {
-      const unburyBtn = makeActionBtn("↑", (ev) => { ev.stopPropagation(); postAction("/api/unbury-session", { id: p.id }); });
-      unburyBtn.setAttribute("title", "Restore pane");
-      leftActions.append(statusBtn, unburyBtn);
-    } else {
-      const buryBtn = makeActionBtn("⊟", (ev) => { ev.stopPropagation(); postAction("/api/bury-session", { id: p.id, tab_id: tabId }); });
-      buryBtn.setAttribute("title", "Bury — removes pane from tab, keeps running");
-      leftActions.append(statusBtn, buryBtn);
-    }
+    leftActions.append(statusBtn);
     row.appendChild(leftActions);
 
 
@@ -283,20 +275,13 @@ window.PaneTreeExt = window.PaneTreeExt || {
       row.appendChild(pill);
     }
 
-    if (p.buried) {
-      const badge = document.createElement("span");
-      badge.className = "node-job buried-badge";
-      badge.textContent = "buried";
-      row.appendChild(badge);
-    } else {
-      const closeBtn = makeActionBtn("×", (ev) => {
-        ev.stopPropagation();
-        showConfirmPopup(closeBtn, () => postAction("/api/close-session", { id: p.id }));
-      });
-      closeBtn.setAttribute("title", "Close session");
-      closeBtn.classList.add("pane-close-btn");
-      row.appendChild(closeBtn);
-    }
+    const closeBtn = makeActionBtn("×", (ev) => {
+      ev.stopPropagation();
+      showConfirmPopup(closeBtn, () => postAction("/api/close-session", { id: p.id }));
+    });
+    closeBtn.setAttribute("title", "Close session");
+    closeBtn.classList.add("pane-close-btn");
+    row.appendChild(closeBtn);
 
     row.addEventListener("click", () => focusNode(p.kind, p.id));
     for (const fn of ext.paneRowDecorators) {
