@@ -38,7 +38,9 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
   "id": "<string>",
   "title": "Tab 2",
   "active": false,
-  "panes": [ <session>, ... ]
+  "panes": [ <session>, ... ],
+  "color": 2,
+  "collapsed": false
 }
 ```
 
@@ -49,6 +51,8 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
 | `title` | string | Display label: custom name if one is set via `POST /api/rename-tab`, otherwise `"Tab N"` (1-indexed) |
 | `active` | boolean | Whether this is the frontmost tab in its window |
 | `panes` | array | Ordered list of session nodes |
+| `color` | int \| null | Group color index (0-5) set via `POST /api/set-tab-color`, or `null` if uncolored |
+| `collapsed` | boolean | Whether the group's panes are collapsed in the panel, set via `POST /api/set-tab-collapsed` |
 
 ## Session node (pane)
 

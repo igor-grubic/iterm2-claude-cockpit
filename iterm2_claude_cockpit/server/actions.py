@@ -158,10 +158,17 @@ async def restore_workspace(
                         await session.async_send_text(line)
                     restored += 1
 
+                tab_id = str(tab.tab_id)
                 name = tab_data.get("name")
-                if name:
-                    with state.lock:
-                        state.tab_names[str(tab.tab_id)] = name
+                color = tab_data.get("color")
+                collapsed = tab_data.get("collapsed")
+                with state.lock:
+                    if name:
+                        state.tab_names[tab_id] = name
+                    if color is not None:
+                        state.tab_colors[tab_id] = int(color)
+                    if collapsed:
+                        state.tab_collapsed[tab_id] = True
         except Exception as exc:
             errors.append(f"window {win_idx + 1}: {exc}")
             continue

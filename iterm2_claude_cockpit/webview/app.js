@@ -1,10 +1,6 @@
 (() => {
   const treeEl = document.getElementById("tree");
   const statusEl = document.getElementById("status");
-  const collapsed = new Set();
-
-  const IDLE_JOBS = new Set(["zsh", "-zsh", "bash", "-bash", "sh", "-sh", "fish", "-fish"]);
-  function isIdle(job) { return !job || IDLE_JOBS.has(job); }
 
   // A pane is Claude when the daemon's ps-based check flags it (p.claude) — the
   // npm/Node install shows a `node` job, so the job name alone isn't enough. The
@@ -12,21 +8,50 @@
   const CLAUDE_JOBS = new Set(["claude", "claude-code"]);
   function isClaudePane(p) { return Boolean(p.claude) || CLAUDE_JOBS.has(p.job); }
 
-  let _measurePill = null;
-  function pillWidth(text) {
-    if (!_measurePill) {
-      _measurePill = document.createElement("span");
-      _measurePill.className = "pane-folder-pill";
-      _measurePill.style.position = "absolute";
-      _measurePill.style.visibility = "hidden";
-      _measurePill.style.whiteSpace = "nowrap";
-      _measurePill.style.left = "-9999px";
-      _measurePill.style.top = "0";
-      document.body.appendChild(_measurePill);
-    }
-    _measurePill.textContent = text;
-    return _measurePill.offsetWidth;
+  // Claude panes get a fixed yellow title, regardless of theme or group color — matches
+  // --clr-claude in styles.css.
+  const CLAUDE_YELLOW = "#f6c177";
+
+  // Per-theme color palette (index 0-5, cycled by clicking a swatch) plus the neutral/label/
+  // title colors that go with it. Selectable in Settings; "2a" is the default.
+  // Both palettes are ordered: red, green, yellow, purple, blue, brown.
+  const THEMES = {
+    "2a": {
+      colors: ["#e2685f", "#7dd3a8", "#e8c26a", "#d8a0e6", "#8ab4f8", "#b58a63"],
+      none: "#333941",
+      labelDim: "#79818b",
+      labelOn: "#c9cfd6",
+      titleDim: "#cdd3da",
+      titleOn: "#ffffff",
+    },
+    "1a": {
+      colors: ["#f0685c", "#9ccfa0", "#f3c96a", "#c792ea", "#7aa2f7", "#bb8b5e"],
+      none: "#356168", // brighter than the chrome border tones — an uncolored group still needs a visible spine
+      labelDim: "#7c9a9c",
+      labelOn: "#cfe3e0",
+      titleDim: "#b9cfcd",
+      titleOn: "#ecf6f4",
+    },
+  };
+  let currentTheme = "2a";
+  function theme() { return THEMES[currentTheme] || THEMES["2a"]; }
+
+  function rgba(hex, a) {
+    const n = parseInt(hex.replace("#", ""), 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
   }
+
+  function nextColor(current) {
+    if (current === null || current === undefined) return 0;
+    if (current === 5) return null;
+    return current + 1;
+  }
+
+  // Optimistic local overrides so a click updates the panel instantly rather than
+  // waiting for the next poll (up to ~500ms) or the daemon's 1s periodic refresh —
+  // the POST persists the change server-side in the background.
+  const colorOverrides = new Map(); // tab id -> color index | null
+  const collapsedOverrides = new Map(); // tab id -> bool
 
   async function copyToClipboard(text) {
     try {
@@ -74,16 +99,13 @@
     }
   }
 
-  function nodeKey(node) {
-    return `${node.kind}:${node.id}`;
-  }
+  let filterColor = null; // ephemeral, shared across all window sections, not persisted
 
   function renderTree(snapshot) {
     treeEl.innerHTML = "";
     if (!snapshot.windows || snapshot.windows.length === 0) {
       const empty = document.createElement("div");
-      empty.className = "node";
-      empty.style.color = "var(--muted)";
+      empty.className = "tree-empty";
       empty.textContent = "(no windows open)";
       treeEl.appendChild(empty);
     } else {
@@ -93,30 +115,53 @@
     }
   }
 
-  function renderWindow(w) {
+  function renderFilterChips() {
     const wrap = document.createElement("div");
-    const wKey = nodeKey(w);
-    const wIsCollapsed = collapsed.has(wKey);
-    const row = nodeRow(w, "window", wIsCollapsed);
-    row.querySelector(".caret").addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      toggle(wKey);
+    wrap.className = "filter-chips";
+    theme().colors.forEach((hex, i) => {
+      const chip = document.createElement("div");
+      chip.className = "filter-chip";
+      chip.title = `Filter group color ${i + 1}`;
+      const selected = filterColor === i;
+      chip.style.background = selected ? hex : rgba(hex, 0.22);
+      chip.style.boxShadow = `inset 0 0 0 1px ${selected ? "#ffffff88" : rgba(hex, 0.7)}`;
+      chip.addEventListener("click", () => {
+        filterColor = filterColor === i ? null : i;
+        if (lastSnapshot) renderTree(lastSnapshot);
+      });
+      wrap.appendChild(chip);
     });
-    wrap.appendChild(row);
-    if (!wIsCollapsed) {
-      for (const t of w.tabs || []) {
-        wrap.appendChild(renderTab(t));
-      }
-    }
     return wrap;
   }
 
-  function startTabEdit(row, t) {
-    const labelEl = row.querySelector(".node-label");
-    const editBtn = row.querySelector(".tab-edit-btn");
+  function renderWindow(w) {
+    const wrap = document.createElement("div");
+    wrap.className = "window-block";
+
+    const meta = document.createElement("div");
+    meta.className = "window-meta";
+    const label = document.createElement("span");
+    label.className = "window-label";
+    label.textContent = w.title || w.id;
+    meta.append(label, renderFilterChips());
+    wrap.appendChild(meta);
+
+    const list = document.createElement("div");
+    list.className = currentTheme === "1a" ? "group-list-classic" : "group-list";
+    for (const t of w.tabs || []) {
+      list.appendChild(currentTheme === "1a" ? renderGroup1a(t) : renderGroup2a(t));
+    }
+    wrap.appendChild(list);
+
+    return wrap;
+  }
+
+  function startGroupEdit(header, t) {
+    const labelEl = header.querySelector(".group-name");
+    const editBtn = header.querySelector(".group-edit-btn");
     if (!labelEl) return;
     const input = document.createElement("input");
-    input.className = "tab-edit-input";
+    input.className = "group-edit-input";
     input.value = t.title;
     labelEl.replaceWith(input);
     if (editBtn) editBtn.style.display = "none";
@@ -146,168 +191,299 @@
     input.addEventListener("click", (ev) => ev.stopPropagation());
   }
 
-  function renderTab(t) {
-    const wrap = document.createElement("div");
-    const tKey = nodeKey(t);
-    const tIsCollapsed = collapsed.has(tKey);
-    const row = nodeRow(t, "tab", tIsCollapsed, true);
-    const caret = row.querySelector(".caret");
-    if (caret) {
-      caret.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        toggle(tKey);
-      });
-    }
-    const editBtn = document.createElement("span");
-    editBtn.className = "tab-edit-btn";
-    editBtn.textContent = "✎";
-    editBtn.title = "Rename tab";
-    editBtn.addEventListener("click", (ev) => { ev.stopPropagation(); startTabEdit(row, t); });
-    row.appendChild(editBtn);
+  function cycleColor(t) {
+    const current = colorOverrides.has(t.id) ? colorOverrides.get(t.id) : (t.color ?? null);
+    const next = nextColor(current);
+    colorOverrides.set(t.id, next);
+    postAction("/api/set-tab-color", { id: t.id, color: next });
+    if (lastSnapshot) renderTree(lastSnapshot);
+  }
 
-    row.draggable = true;
-    row.addEventListener("dragstart", (ev) => {
+  function toggleCollapse(t) {
+    const current = collapsedOverrides.has(t.id) ? collapsedOverrides.get(t.id) : Boolean(t.collapsed);
+    const next = !current;
+    collapsedOverrides.set(t.id, next);
+    postAction("/api/set-tab-collapsed", { id: t.id, collapsed: next });
+    if (lastSnapshot) renderTree(lastSnapshot);
+  }
+
+  // Shared by both theme skins — a group header is draggable to reorder its tab within the
+  // window (see /api/move-tab). `dragRootEl` is whichever element should get the
+  // dragging/drag-over marker classes (each skin's own root element, since their CSS differs).
+  function wireGroupDrag(header, dragRootEl, t) {
+    header.addEventListener("dragstart", (ev) => {
       dragTabId = t.id;
       dragWindowId = (findWindowForTab(t.id) || {}).id || null;
       ev.dataTransfer.effectAllowed = "move";
       ev.dataTransfer.setData("text/plain", t.id);
-      row.classList.add("dragging");
+      dragRootEl.classList.add("dragging");
       isDragging = true;
     });
-    row.addEventListener("dragend", () => {
-      row.classList.remove("dragging");
-      document.querySelectorAll(".node.tab.drag-over").forEach(el => el.classList.remove("drag-over"));
+    header.addEventListener("dragend", () => {
+      dragRootEl.classList.remove("dragging");
+      document.querySelectorAll(".drag-over").forEach((el) => el.classList.remove("drag-over"));
       isDragging = false;
       dragTabId = null;
       dragWindowId = null;
     });
-    row.addEventListener("dragover", (ev) => {
+    header.addEventListener("dragover", (ev) => {
       if (!dragTabId || dragTabId === t.id) return;
       ev.preventDefault();
       ev.dataTransfer.dropEffect = "move";
-      row.classList.add("drag-over");
+      dragRootEl.classList.add("drag-over");
     });
-    row.addEventListener("dragleave", (ev) => {
-      if (row.contains(ev.relatedTarget)) return;
-      row.classList.remove("drag-over");
+    header.addEventListener("dragleave", (ev) => {
+      if (dragRootEl.contains(ev.relatedTarget)) return;
+      dragRootEl.classList.remove("drag-over");
     });
-    row.addEventListener("drop", async (ev) => {
+    header.addEventListener("drop", async (ev) => {
       ev.preventDefault();
-      row.classList.remove("drag-over");
+      dragRootEl.classList.remove("drag-over");
       if (!dragTabId || dragTabId === t.id) return;
       const srcTabId = dragTabId;
       const srcWindowId = dragWindowId;
       const targetWin = findWindowForTab(t.id);
       if (!targetWin || srcWindowId !== targetWin.id) return;
-      const position = (targetWin.tabs || []).findIndex(tab => tab.id === t.id);
+      const position = (targetWin.tabs || []).findIndex((tab) => tab.id === t.id);
       if (position === -1) return;
       await postAction("/api/move-tab", { tab_id: srcTabId, window_id: srcWindowId, position });
     });
+  }
 
-    wrap.appendChild(row);
-    if (!tIsCollapsed && (t.panes || []).length > 0) {
-      for (const p of t.panes) {
-        wrap.appendChild(renderPane(p, t.id));
+  function renderGroup2a(t) {
+    const th = theme();
+    const wrap = document.createElement("div");
+    wrap.className = "group";
+
+    const effectiveColor = colorOverrides.has(t.id) ? colorOverrides.get(t.id) : (t.color ?? null);
+    const effectiveCollapsed = collapsedOverrides.has(t.id) ? collapsedOverrides.get(t.id) : Boolean(t.collapsed);
+    const col = effectiveColor === null || effectiveColor === undefined ? null : th.colors[effectiveColor];
+    const dim = filterColor !== null && effectiveColor !== filterColor;
+
+    wrap.style.background = col ? rgba(col, dim ? 0.02 : 0.05) : "rgba(0,0,0,.15)";
+    wrap.style.boxShadow = `inset 3px 0 0 ${col ? (dim ? rgba(col, 0.25) : col) : th.none}`;
+
+    const header = document.createElement("div");
+    header.className = "group-header";
+    header.draggable = true;
+    wireGroupDrag(header, wrap, t);
+
+    const swatch = document.createElement("span");
+    swatch.className = "group-swatch";
+    swatch.title = "Click to cycle group color";
+    swatch.style.background = col ? (dim ? rgba(col, 0.3) : col) : "transparent";
+    swatch.style.boxShadow =
+      `inset 0 0 0 1px ${col ? "transparent" : th.none}, 0 0 0 4px ${col ? rgba(col, dim ? 0.06 : 0.16) : "transparent"}`;
+    swatch.addEventListener("click", (ev) => { ev.stopPropagation(); cycleColor(t); });
+
+    const name = document.createElement("span");
+    name.className = "group-name";
+    name.textContent = t.title;
+    name.style.color = dim ? th.labelDim : (col || th.labelOn);
+    name.addEventListener("click", (ev) => { ev.stopPropagation(); toggleCollapse(t); });
+
+    const count = document.createElement("span");
+    count.className = "group-count";
+    count.textContent = String((t.panes || []).length);
+    count.addEventListener("click", (ev) => { ev.stopPropagation(); toggleCollapse(t); });
+
+    const caret = document.createElement("span");
+    caret.className = "group-caret";
+    caret.textContent = effectiveCollapsed ? "▶" : "▼";
+    caret.addEventListener("click", (ev) => { ev.stopPropagation(); toggleCollapse(t); });
+
+    const editBtn = document.createElement("span");
+    editBtn.className = "group-edit-btn";
+    editBtn.textContent = "✎";
+    editBtn.title = "Rename tab";
+    editBtn.addEventListener("click", (ev) => { ev.stopPropagation(); startGroupEdit(header, t); });
+
+    header.append(name, count, caret, editBtn, swatch);
+    wrap.appendChild(header);
+
+    if (!effectiveCollapsed) {
+      for (const p of t.panes || []) {
+        wrap.appendChild(renderPaneRow2a(p, col, dim));
       }
     }
     return wrap;
   }
 
-  function renderPane(p, tabId) {
+  function renderPaneRow2a(p, groupColorHex, dim) {
+    const th = theme();
     const row = document.createElement("div");
-    row.className = "node pane" + (p.active ? " active" : "") + (isClaudePane(p) ? " claude" : "");
-    if (p.last_line) row.title = p.last_line;
+    row.className = "pane-row" + (p.active ? " active" : "");
 
-    // Left action buttons — fixed at window-level left edge, always visible
-    const leftActions = document.createElement("span");
-    leftActions.className = "pane-left-actions";
+    const isClaude = isClaudePane(p);
 
-    const idle = isIdle(p.job);
-    const statusBtn = makeActionBtn("ℹ", (ev) => { ev.stopPropagation(); showStatusPopup(p, statusBtn); });
-    statusBtn.setAttribute("title", idle ? "Status — idle" : `Status — ${p.job}`);
-    statusBtn.classList.add(idle ? "action-idle" : "action-running");
+    const tooltipParts = [];
+    if (p.job) tooltipParts.push(`job: ${p.job}`);
+    if (p.cwd) tooltipParts.push(`cwd: ${p.cwd}`);
+    if (p.last_line) tooltipParts.push(p.last_line);
+    if (tooltipParts.length) row.title = tooltipParts.join("\n");
 
-    leftActions.append(statusBtn);
-    row.appendChild(leftActions);
+    row.style.background = dim
+      ? "transparent"
+      : (p.active ? rgba(groupColorHex || "#8899aa", 0.16) : (groupColorHex ? rgba(groupColorHex, 0.06) : "transparent"));
+    row.style.boxShadow = p.active && !dim ? `inset 0 0 0 1px ${rgba(groupColorHex || "#8899aa", 0.45)}` : "none";
 
+    const marker = document.createElement("span");
+    marker.className = "pane-dot";
+    marker.style.background = "#5a616b";
+    marker.style.boxShadow = "0 0 0 5px rgba(90,97,107,0.16)";
 
-    const label = document.createElement("span");
-    label.className = "pane-title";
-    label.textContent = p.session_name || p.title || p.id;
-    row.appendChild(label);
+    const main = document.createElement("div");
+    main.className = "pane-main";
 
-    if (p.job) {
-      const job = document.createElement("span");
-      job.className = "node-job";
-      job.textContent = p.job;
-      row.appendChild(job);
+    const title = document.createElement("span");
+    title.className = "pane-title";
+    title.textContent = p.session_name || p.title || p.id;
+    title.style.color = dim ? th.labelDim : (isClaude ? CLAUDE_YELLOW : (p.active ? th.titleOn : th.titleDim));
+
+    const path = document.createElement("span");
+    path.className = "pane-path";
+    path.textContent = p.cwd || p.title || "";
+    if (p.active && p.cwd) {
+      path.title = "Click to copy";
+      path.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        copyToClipboard(p.cwd).then((ok) => toast(ok ? "copied cwd" : "copy failed", ok));
+      });
     }
 
-    if (p.title) {
-      const pill = document.createElement("span");
-      pill.className = "pane-folder-pill";
-      pill.textContent = p.title;
-      if (p.cwd) {
-        pill.title = p.cwd;
-        if (p.active) {
-          pill.classList.add("pill-copyable");
-          const w = Math.max(pillWidth(p.title), pillWidth("copy"));
-          pill.style.minWidth = w + "px";
-          pill.addEventListener("mouseenter", () => { pill.textContent = "copy"; });
-          pill.addEventListener("mouseleave", () => { pill.textContent = p.title; });
-        }
-        pill.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          if (p.active) {
-            copyToClipboard(p.cwd);
-          } else {
-            focusNode(p.kind, p.id);
-          }
-        });
-      }
-      row.appendChild(pill);
-    }
+    main.append(title, path);
 
-    const closeBtn = makeActionBtn("×", (ev) => {
+    const closeBtn = document.createElement("span");
+    closeBtn.className = "pane-close-btn";
+    closeBtn.textContent = "×";
+    closeBtn.title = "Close session";
+    closeBtn.addEventListener("click", (ev) => {
       ev.stopPropagation();
       showConfirmPopup(closeBtn, () => postAction("/api/close-session", { id: p.id }));
     });
-    closeBtn.setAttribute("title", "Close session");
-    closeBtn.classList.add("pane-close-btn");
-    row.appendChild(closeBtn);
 
+    const children = [marker, main];
+    if (!isClaude) {
+      const status = document.createElement("span");
+      status.className = "pane-status";
+      status.textContent = "idle";
+      status.style.color = "#6b727c";
+      children.push(status);
+    }
+    children.push(closeBtn);
+    row.append(...children);
     row.addEventListener("click", () => focusNode(p.kind, p.id));
     return row;
   }
 
-  function nodeRow(node, kindCls, isCollapsed, hasChildren = true) {
-    const row = document.createElement("div");
-    row.className = "node " + kindCls + (node.active ? " active" : "");
-    if (hasChildren) {
-      const caret = document.createElement("span");
-      caret.className = "caret";
-      caret.textContent = isCollapsed ? "▸" : "▾";
-      row.appendChild(caret);
-    } else {
-      const spacer = document.createElement("span");
-      spacer.className = "caret";
-      spacer.textContent = "•";
-      row.appendChild(spacer);
+  // "1a" — the classic terminal-styled theme: flat accent-bar groups (no rounded block, no
+  // background tint), a text-glyph marker instead of a colored dot, and no pane-count. Shares
+  // the same state/behavior helpers as the 2a skin (cycleColor, toggleCollapse, startGroupEdit,
+  // wireGroupDrag) —
+  // only presentation differs.
+  function renderGroup1a(t) {
+    const th = theme();
+    const wrap = document.createElement("div");
+    wrap.className = "group-classic";
+
+    const effectiveColor = colorOverrides.has(t.id) ? colorOverrides.get(t.id) : (t.color ?? null);
+    const effectiveCollapsed = collapsedOverrides.has(t.id) ? collapsedOverrides.get(t.id) : Boolean(t.collapsed);
+    const col = effectiveColor === null || effectiveColor === undefined ? null : th.colors[effectiveColor];
+    const dim = filterColor !== null && effectiveColor !== filterColor;
+
+    wrap.style.borderLeft = `3px solid ${col ? (dim ? rgba(col, 0.25) : col) : th.none}`;
+
+    const header = document.createElement("div");
+    header.className = "group-classic-header";
+    header.draggable = true;
+    wireGroupDrag(header, wrap, t);
+
+    const caret = document.createElement("span");
+    caret.className = "group-caret-classic";
+    caret.textContent = effectiveCollapsed ? "▸" : "▾";
+    caret.addEventListener("click", (ev) => { ev.stopPropagation(); toggleCollapse(t); });
+
+    const name = document.createElement("span");
+    name.className = "group-name";
+    name.textContent = t.title;
+    name.style.color = dim ? th.labelDim : (col || th.labelOn);
+    name.addEventListener("click", (ev) => { ev.stopPropagation(); toggleCollapse(t); });
+
+    const swatch = document.createElement("span");
+    swatch.className = "group-swatch-classic";
+    swatch.title = "Click to cycle group color";
+    swatch.style.background = col ? (dim ? rgba(col, 0.3) : col) : "transparent";
+    swatch.style.boxShadow = `inset 0 0 0 1px ${col ? "transparent" : th.none}`;
+    swatch.addEventListener("click", (ev) => { ev.stopPropagation(); cycleColor(t); });
+
+    const editBtn = document.createElement("span");
+    editBtn.className = "group-edit-btn";
+    editBtn.textContent = "✎";
+    editBtn.title = "Rename tab";
+    editBtn.addEventListener("click", (ev) => { ev.stopPropagation(); startGroupEdit(header, t); });
+
+    header.append(caret, name, editBtn, swatch);
+    wrap.appendChild(header);
+
+    if (!effectiveCollapsed) {
+      for (const p of t.panes || []) {
+        wrap.appendChild(renderPaneRow1a(p, col, dim));
+      }
     }
-    const label = document.createElement("span");
-    label.className = "node-label";
-    label.textContent = node.title || node.id;
-    row.appendChild(label);
-    row.addEventListener("click", () => focusNode(node.kind, node.id));
-    return row;
+    return wrap;
   }
 
-  function makeActionBtn(text, handler) {
-    const btn = document.createElement("span");
-    btn.className = "pane-action-btn";
-    btn.textContent = text;
-    btn.addEventListener("click", handler);
-    return btn;
+  function renderPaneRow1a(p, groupColorHex, dim) {
+    const th = theme();
+    const row = document.createElement("div");
+    row.className = "pane-row-classic" + (p.active ? " active" : "");
+
+    const isClaude = isClaudePane(p);
+
+    const tooltipParts = [];
+    if (p.job) tooltipParts.push(`job: ${p.job}`);
+    if (p.cwd) tooltipParts.push(`cwd: ${p.cwd}`);
+    if (p.last_line) tooltipParts.push(p.last_line);
+    if (tooltipParts.length) row.title = tooltipParts.join("\n");
+
+    row.style.background = dim
+      ? "transparent"
+      : (p.active ? rgba(groupColorHex || "#8899aa", 0.18) : (groupColorHex ? rgba(groupColorHex, 0.06) : "transparent"));
+    row.style.borderLeft = `2px solid ${dim ? "transparent" : (p.active ? (groupColorHex || th.none) : "transparent")}`;
+
+    const mark = document.createElement("span");
+    mark.className = "pane-mark";
+    mark.textContent = "·";
+    mark.style.color = th.none;
+
+    const title = document.createElement("span");
+    title.className = "pane-title-classic";
+    title.textContent = p.session_name || p.title || p.id;
+    title.style.color = dim ? th.labelDim : (isClaude ? CLAUDE_YELLOW : (p.active ? th.titleOn : th.titleDim));
+
+    const path = document.createElement("span");
+    path.className = "pane-path-classic";
+    path.textContent = p.cwd || p.title || "";
+    if (p.active && p.cwd) {
+      path.title = "Click to copy";
+      path.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        copyToClipboard(p.cwd).then((ok) => toast(ok ? "copied cwd" : "copy failed", ok));
+      });
+    }
+
+    const closeBtn = document.createElement("span");
+    closeBtn.className = "pane-close-btn";
+    closeBtn.textContent = "×";
+    closeBtn.title = "Close session";
+    closeBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      showConfirmPopup(closeBtn, () => postAction("/api/close-session", { id: p.id }));
+    });
+
+    row.append(mark, title, path, closeBtn);
+    row.addEventListener("click", () => focusNode(p.kind, p.id));
+    return row;
   }
 
   async function postAction(path, body) {
@@ -324,66 +500,10 @@
     }
   }
 
-  async function showStatusPopup(node, anchor) {
-    dismissPopup();
-    const popup = document.createElement("div");
-    popup.className = "lines-popup status-popup";
-    popup.addEventListener("click", (ev) => ev.stopPropagation());
-
-    for (const [label, value] of [
-      ["job", node.job  || "(none)"],
-      ["cwd", node.cwd  || "(unknown)"],
-    ]) {
-      const row = document.createElement("div");
-      row.className = "status-row";
-      const lbl = document.createElement("span");
-      lbl.className = "status-label";
-      lbl.textContent = label;
-      const val = document.createElement("span");
-      val.className = "status-value";
-      val.textContent = value;
-      row.append(lbl, val);
-      popup.appendChild(row);
-    }
-
-    const divider = document.createElement("div");
-    divider.className = "status-divider";
-    popup.appendChild(divider);
-
-    const rect = anchor.getBoundingClientRect();
-    popup.style.top = (rect.bottom + 4) + "px";
-    popup.style.left = "8px";
-    popup.style.right = "8px";
-    document.body.appendChild(popup);
-    activePopup = popup;
-
-    try {
-      const res = await fetch(`/api/session-lines?id=${encodeURIComponent(node.id)}`);
-      const data = await res.json();
-      if (data.ok && data.lines && data.lines.length > 0) {
-        for (const line of data.lines) {
-          const el = document.createElement("div");
-          el.className = "lines-line";
-          el.textContent = line;
-          popup.appendChild(el);
-        }
-      } else {
-        const empty = document.createElement("div");
-        empty.className = "lines-empty";
-        empty.textContent = "(no output)";
-        popup.appendChild(empty);
-      }
-    } catch (e) {
-      const err = document.createElement("div");
-      err.className = "lines-empty";
-      err.textContent = "error fetching lines";
-      popup.appendChild(err);
-    }
-  }
-
   let activePopup = null;
   function dismissPopup() {
     if (activePopup) { activePopup.remove(); activePopup = null; }
+    setActiveNav(null);
   }
 
   function showConfirmPopup(anchor, onConfirm) {
@@ -459,12 +579,6 @@
   document.addEventListener("click", dismissPopup);
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") dismissPopup(); });
 
-  function toggle(key) {
-    if (collapsed.has(key)) collapsed.delete(key);
-    else collapsed.add(key);
-    if (lastSnapshot) renderTree(lastSnapshot);
-  }
-
   async function focusNode(kind, id) {
     try {
       const res = await fetch("/api/focus", {
@@ -488,6 +602,13 @@
       }
     }
     return null;
+  }
+
+  const NAV_BTN_IDS = ["btn-cheatsheet", "btn-claude", "btn-settings", "btn-restore"];
+  function setActiveNav(id) {
+    for (const btnId of NAV_BTN_IDS) {
+      document.getElementById(btnId).classList.toggle("active", btnId === id);
+    }
   }
 
   async function openModal(title, loadFn) {
@@ -527,6 +648,7 @@
   let itermCheatsheetCache = null;
 
   async function openItermCheatsheet() {
+    setActiveNav("btn-cheatsheet");
     await openModal("iTerm2 cheatsheet", async (body) => {
       if (itermCheatsheetCache === null) {
         const res = await fetch("/static/iterm_cheatsheet.html", { cache: "no-store" });
@@ -540,6 +662,7 @@
   let claudeCheatsheetCache = null;
 
   async function openClaudeCheatsheet() {
+    setActiveNav("btn-claude");
     await openModal("Claude Code cheatsheet", async (body) => {
       if (claudeCheatsheetCache === null) {
         const res = await fetch("/static/claude_cheatsheet.html", { cache: "no-store" });
@@ -550,7 +673,17 @@
     });
   }
 
+  const THEME_CHOICES = [["2a", "Modern"], ["1a", "Classic"]];
+
+  function applyTheme(id) {
+    currentTheme = id;
+    document.body.dataset.theme = id;
+    postAction("/api/settings", { theme: id });
+    if (lastSnapshot) renderTree(lastSnapshot);
+  }
+
   async function openSettings() {
+    setActiveNav("btn-settings");
     await openModal("Settings", async (body) => {
       const res = await fetch("/api/about", { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -559,15 +692,31 @@
       const dl = document.createElement("dl");
       dl.className = "settings-list";
 
-      const addRow = (term, value) => {
+      const addRow = (term, valueEl) => {
         const dt = document.createElement("dt");
         dt.textContent = term;
         const dd = document.createElement("dd");
-        dd.textContent = value;
+        if (typeof valueEl === "string") dd.textContent = valueEl;
+        else dd.appendChild(valueEl);
         dl.append(dt, dd);
       };
 
       addRow("Version", data.version || "(unknown)");
+
+      const themeRow = document.createElement("div");
+      themeRow.className = "settings-theme-row";
+      for (const [id, label] of THEME_CHOICES) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "settings-theme-btn" + (currentTheme === id ? " active" : "");
+        btn.textContent = label;
+        btn.addEventListener("click", () => {
+          applyTheme(id);
+          themeRow.querySelectorAll(".settings-theme-btn").forEach((b) => b.classList.toggle("active", b === btn));
+        });
+        themeRow.appendChild(btn);
+      }
+      addRow("Theme", themeRow);
 
       body.innerHTML = "";
       body.appendChild(dl);
@@ -675,7 +824,7 @@
 
   function findWindowForTab(tabId) {
     for (const w of lastSnapshot?.windows || []) {
-      if ((w.tabs || []).some(t => t.id === tabId)) return w;
+      if ((w.tabs || []).some((t) => t.id === tabId)) return w;
     }
     return null;
   }
@@ -691,7 +840,7 @@
       if (json !== lastSnapshotJson) {
         lastSnapshotJson = json;
         lastSnapshot = data;
-        if (!document.querySelector(".tab-edit-input") && !isDragging) {
+        if (!document.querySelector(".group-edit-input") && !isDragging) {
           renderTree(lastSnapshot);
         }
       }
@@ -703,7 +852,22 @@
     }
   }
 
-  setStatus("connecting…");
-  pollOnce();
-  setInterval(pollOnce, 500);
+  async function loadInitialTheme() {
+    try {
+      const res = await fetch("/api/settings", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.theme) {
+        currentTheme = data.theme;
+        document.body.dataset.theme = currentTheme;
+      }
+    } catch (_) { /* keep the default theme */ }
+  }
+
+  // Load the saved theme before the first poll so the panel never flashes the wrong skin.
+  loadInitialTheme().then(() => {
+    setStatus("connecting…");
+    pollOnce();
+    setInterval(pollOnce, 500);
+  });
 })();

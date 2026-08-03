@@ -10,16 +10,16 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 ## Features
 
 - Live hierarchical tree: window → tab → pane, updated in real time
-- Claude panes shown in yellow — any pane running Claude Code stands out from plain white shells at a glance (detected via the pane's TTY, so it works for the Node-based install too)
-- Click any node to focus it immediately
+- Two selectable panel themes (Settings panel → Theme): **Modern**, the default, and **Classic**, a JetBrains Mono terminal-styled alternative. The choice persists across restarts
+- Per-tab group color coding: click a tab's swatch to cycle through 6 colors, which tints the tab's block and every pane in it; click a color chip in the header to filter the panel down to that color. Colors and collapsed state persist across restarts
+- Claude panes stand out at a glance with a yellow pane title — detected via the pane's TTY, so it works for the Node-based install too
+- Click any pane to focus it immediately; hover a pane to reveal its close (×) button; on the active pane, click its path to copy the working directory to the clipboard. Hover a pane for a tooltip with its job, working directory, and last output line
 - Rename tabs inline (hover → ✎) or programmatically via `POST /api/rename-tab`; custom names persist until the tab or window is closed
-- Per-pane status popup: current job, working directory, recent terminal output
-- Click the folder pill to focus the pane; on the active pane, hover reveals "copy" and clicking copies its working directory to the clipboard
 - Create new tabs and windows from the panel
 - Session restore (⟲ button) — recreate your windows, tabs, and panes in their saved working directories after closing or updating iTerm2
 - Claude Code cheatsheet (✦ button) — a built-in quick reference of slash commands and keyboard shortcuts
 - YAML project layouts — define a named set of tabs and open them with one click
-- Settings panel (⚙ button) — shows the plugin version at a glance
+- Settings panel (⚙ button) — switch the panel theme and see the plugin version at a glance
 - Zero external dependencies — stdlib only, beyond the `iterm2` library bundled with iTerm2
 - Runs as an AutoLaunch daemon; starts automatically with iTerm2
 
@@ -109,7 +109,7 @@ Two files are kept: `state.json` mirrors your *current* layout, while `restore.j
 
 Click the **⟲ Restore** button in the footer (it shows a summary — how many windows, tabs, and panes — and confirms first) to recreate the saved windows, tabs, and panes. Each pane comes back as a plain shell `cd`'d into its saved directory. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive. To pick a Claude conversation back up, run `claude --continue` (or `claude --resume`) in the restored pane.
 
-What it does **not** restore: running processes (Claude sessions, dev servers, builds — panes come back as a plain shell), terminal scrollback, and exact split sizes (panes come back as a simple vertical split). Custom tab names are persisted in the same file and also survive restarts.
+What it does **not** restore: running processes (Claude sessions, dev servers, builds — panes come back as a plain shell), terminal scrollback, and exact split sizes (panes come back as a simple vertical split). Custom tab names, group colors, and collapsed state are persisted in the same file and also survive restarts.
 
 ## Project layouts
 

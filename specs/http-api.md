@@ -26,6 +26,36 @@ Returns the plugin version.
 
 ---
 
+### `GET /api/settings`
+
+Returns the current UI settings.
+
+**Response:** `200 application/json`
+
+```json
+{ "theme": "2a" }
+```
+
+`theme` — the selected panel visual theme: `"2a"` (default, "Modern") or `"1a"` ("Classic").
+
+---
+
+### `POST /api/settings`
+
+Set a UI setting.
+
+**Request body:** `application/json`
+
+```json
+{ "theme": "1a" }
+```
+
+Invalid or missing `theme` values fall back to the default (`"2a"`), rather than erroring.
+
+**Response:** `200 application/json` — `{ "ok": true, "theme": "1a" }`
+
+---
+
 ### `GET /api/tree`
 
 Returns the current session tree snapshot.
@@ -128,6 +158,36 @@ Set a custom display name for a tab. The name persists in the daemon's memory un
 
 ---
 
+### `POST /api/set-tab-color`
+
+Set or clear a tab's group color. Persists across restarts the same way `tab_names` does.
+
+**Request body:** `application/json`
+
+```json
+{ "id": "<tab id>", "color": 0-5 | null }
+```
+
+Set `color` to `null` to clear it (uncolored).
+
+**Response:** `200 application/json` — `{ "ok": true }` or `{ "ok": false, "error": "..." }`
+
+---
+
+### `POST /api/set-tab-collapsed`
+
+Set a tab group's collapsed state in the panel. Persists across restarts the same way `tab_names` does.
+
+**Request body:** `application/json`
+
+```json
+{ "id": "<tab id>", "collapsed": true | false }
+```
+
+**Response:** `200 application/json` — `{ "ok": true }` or `{ "ok": false, "error": "..." }`
+
+---
+
 ### `POST /api/project`
 
 Open a named project layout from `iterm2_claude_cockpit/projects/<name>.yaml`.
@@ -177,6 +237,10 @@ The restored workspace is the layout as it was during the *previous* daemon sess
 ### `GET /static/<path>`
 
 Serves files from `iterm2_claude_cockpit/webview/`. Used by the panel for `app.js`, `styles.css`, `iterm_cheatsheet.html`, and `claude_cheatsheet.html`.
+
+### `GET /static/fonts/<name>`
+
+Serves the bundled webfonts (`webview/fonts/`) referenced by `styles.css`'s `@font-face` rules: `space-grotesk-variable.woff2`, `ibm-plex-mono-400.woff2`, `ibm-plex-mono-500.woff2`. An explicit filename whitelist, not a generic directory listing.
 
 ---
 
