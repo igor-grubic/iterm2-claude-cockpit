@@ -17,7 +17,6 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 - Create new tabs and windows from the panel
 - Session restore (⟲ button) — recreate your windows, tabs, and panes in their saved working directories after closing or updating iTerm2
 - Claude Code cheatsheet (✦ button) — a built-in quick reference of slash commands and keyboard shortcuts
-- YAML project layouts — define a named set of tabs and open them with one click
 - Settings panel (⚙ button) — shows the plugin version at a glance
 - Zero external dependencies — stdlib only, beyond the `iterm2` library bundled with iTerm2
 - Runs as an AutoLaunch daemon; starts automatically with iTerm2
@@ -109,10 +108,6 @@ Two files are kept: `state.json` mirrors your *current* layout, while `restore.j
 Click the **⟲ Restore** button in the footer (it shows a summary — how many windows, tabs, and panes — and confirms first) to recreate the saved windows, tabs, and panes. Each pane comes back as a plain shell `cd`'d into its saved directory. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive. To pick a Claude conversation back up, run `claude --continue` (or `claude --resume`) in the restored pane.
 
 What it does **not** restore: running processes (Claude sessions, dev servers, builds — panes come back as a plain shell), terminal scrollback, and exact split sizes (panes come back as a simple vertical split). Custom tab names are persisted in the same file and also survive restarts.
-
-## Project layouts
-
-Define a named set of tabs in `iterm2_claude_cockpit/projects/example.yaml` and open them from the panel. See [`iterm2_claude_cockpit/projects/example.yaml`](iterm2_claude_cockpit/projects/example.yaml) for the format.
 
 ## Troubleshooting
 

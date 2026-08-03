@@ -39,8 +39,9 @@ server/tree.py                                                │
     ▼                                                         │
 server/http.py                                                │
     │  GET /api/tree → returns snapshot JSON                  │
-    │  POST /api/focus|close|create|restore → delegates to    │
-    │    server/actions.py                                     │
+    │  POST /api/focus|new-tab|new-window|split-pane|          │
+    │    close-session|move-tab|rename-tab|restore →           │
+    │    delegates to server/actions.py                        │
     ▼                                                         │
 webview/index.html + app.js                                   │
     │  polls /api/tree every ~500ms                           │

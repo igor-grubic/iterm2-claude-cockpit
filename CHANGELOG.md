@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `pyproject.toml`: corrected `license` field (was referencing a missing `LICENSE` file).
 
 ### Removed
+- YAML project layouts. The feature was advertised but never implemented — there was only a placeholder `projects/example.yaml`, with no loader, no panel button, and no route to open a layout. The example file, its documentation, and the CI job that validated it have all been removed.
 - Bury/unbury (send-to-background) of sessions. A pane could be hidden from its tab while left running, but the pane→tab mapping lived only in daemon memory, so buried panes silently disappeared from the panel after a daemon restart. The feature is gone: the bury/unbury buttons, the `POST /api/bury` route, and the `buried` snapshot field have been removed. Any already-buried sessions remain recoverable through iTerm2's native **Session → Buried Sessions** menu.
 - The `[iterm2]` section from `setup.cfg` (only consumed by iTerm2's Full Environment loader, no longer relevant under Basic-script install).
 
