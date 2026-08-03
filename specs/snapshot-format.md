@@ -62,7 +62,8 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
   "job": "nvim",
   "last_line": "-- INSERT --",
   "cwd": "/Users/igor/code/myrepo",
-  "tty": "/dev/ttys003"
+  "tty": "/dev/ttys003",
+  "claude": false
 }
 ```
 
@@ -77,6 +78,7 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
 | `last_line` | string | Last non-empty visible terminal line (max 120 chars), empty if unavailable |
 | `cwd` | string | Current working directory, empty if unknown |
 | `tty` | string | Controlling TTY path (e.g. `/dev/ttys003`), empty if unknown |
+| `claude` | boolean | Whether a `claude`/`claude-code` process is attached to this pane's TTY (detected via `ps`). `true` even when the foreground `job` is `node`, since the npm/Node install runs Claude under Node. `false` if undetectable |
 
 ## Invariants
 

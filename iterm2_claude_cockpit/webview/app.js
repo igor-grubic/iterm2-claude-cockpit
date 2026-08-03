@@ -6,8 +6,11 @@
   const IDLE_JOBS = new Set(["zsh", "-zsh", "bash", "-bash", "sh", "-sh", "fish", "-fish"]);
   function isIdle(job) { return !job || IDLE_JOBS.has(job); }
 
+  // A pane is Claude when the daemon's ps-based check flags it (p.claude) — the
+  // npm/Node install shows a `node` job, so the job name alone isn't enough. The
+  // job-name check is a cheap fallback for a bare `claude` binary in the foreground.
   const CLAUDE_JOBS = new Set(["claude", "claude-code"]);
-  function isClaude(job) { return CLAUDE_JOBS.has(job); }
+  function isClaudePane(p) { return Boolean(p.claude) || CLAUDE_JOBS.has(p.job); }
 
   let _measurePill = null;
   function pillWidth(text) {
@@ -212,7 +215,7 @@
 
   function renderPane(p, tabId) {
     const row = document.createElement("div");
-    row.className = "node pane" + (p.active ? " active" : "") + (isClaude(p.job) ? " claude" : "");
+    row.className = "node pane" + (p.active ? " active" : "") + (isClaudePane(p) ? " claude" : "");
     if (p.last_line) row.title = p.last_line;
 
     // Left action buttons — fixed at window-level left edge, always visible

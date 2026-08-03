@@ -10,7 +10,7 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 ## Features
 
 - Live hierarchical tree: window → tab → pane, updated in real time
-- Claude panes shown in yellow — panes whose foreground job is `claude` stand out from plain white shells at a glance
+- Claude panes shown in yellow — any pane running Claude Code stands out from plain white shells at a glance (detected via the pane's TTY, so it works for the Node-based install too)
 - Click any node to focus it immediately
 - Rename tabs inline (hover → ✎) or programmatically via `POST /api/rename-tab`; custom names persist until the tab or window is closed
 - Per-pane status popup: current job, working directory, recent terminal output
