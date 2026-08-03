@@ -63,7 +63,13 @@ async def detect(
     # Primary: session-GUID signal (works when Claude runs as a background daemon).
     sig = all_signals.get(session_id, {})
     if sig:
-        active = sig.get("state") != "idle"
+        # The Stop hook writes state="idle" when Claude finishes a turn, but the
+        # REPL is still alive at its prompt and may have a foreground child (e.g.
+        # `docker-compose`). Don't demote such a pane to "not Claude" on every
+        # turn boundary while a claude process is still attached to its TTY —
+        # that unmasks the child's job badge and strips the Claude styling. Only
+        # a genuinely-exited pane (no claude on the TTY) becomes inactive.
+        active = sig.get("state") != "idle" or _claude_attached_to_tty(tty, ps_output)
     else:
         # Fallback: ps-based TTY check (inline mode where Claude attaches to TTY).
         active = _claude_attached_to_tty(tty, ps_output)
@@ -76,6 +82,7 @@ async def detect(
             "ext.claude.active": False,
             "ext.claude.state": "idle",
             "ext.claude.action_needed": False,
+            "ext.claude.session_id": "",
         }
 
     state = sig.get("state", "running")  # default: active but no signal yet → running
@@ -88,4 +95,7 @@ async def detect(
         "ext.claude.active": True,
         "ext.claude.state": state,
         "ext.claude.action_needed": state == "attention",
+        # Claude's own session UUID (from notify.sh), used to resume this pane via
+        # `claude --resume <id>` after a restart. Empty until the first hook fires.
+        "ext.claude.session_id": sig.get("claude_session_id", ""),
     }

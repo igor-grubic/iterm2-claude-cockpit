@@ -34,6 +34,24 @@ if [ "$state" = "attention" ]; then
     fi
 fi
 
+# Claude's own session id, captured from the payload so the cockpit can later
+# resume this pane via `claude --resume <id>`. Extracted and validated the same
+# defensive way as the fields above — anything unexpected is dropped, never
+# written into the JSON unescaped.
+claude_session_id=""
+raw_csid=$(printf '%s' "$stdin_payload" | sed 's/.*"session_id":"\([^"]*\)".*/\1/')
+case "$raw_csid" in
+    "") ;;
+    *[!0-9A-Fa-f-]*) ;;  # not a UUID charset — reject (also catches no-match: whole payload)
+    *) claude_session_id="$raw_csid" ;;
+esac
+
+# Build the optional ,"claude_session_id":"…" suffix appended to both JSON branches.
+extra=""
+if [ -n "$claude_session_id" ]; then
+    extra=",\"claude_session_id\":\"$claude_session_id\""
+fi
+
 ts=$(date +%s)
 
 # Primary: use ITERM_SESSION_ID if available — works in daemon mode where
@@ -48,7 +66,7 @@ esac
 
 if [ -n "$session_guid" ]; then
     mkdir -p "$out_dir"
-    json="{\"session\":\"$session_guid\",\"state\":\"$state\",\"ts\":$ts}"
+    json="{\"session\":\"$session_guid\",\"state\":\"$state\",\"ts\":$ts$extra}"
     tmp="$out_dir/$session_guid.json.tmp.$$"
     printf '%s' "$json" > "$tmp" && mv -f "$tmp" "$out_dir/$session_guid.json"
     exit 0
@@ -76,7 +94,7 @@ esac
 tty_base=$(basename "$tty_path")
 mkdir -p "$out_dir"
 
-json="{\"tty\":\"$tty_path\",\"state\":\"$state\",\"ts\":$ts}"
+json="{\"tty\":\"$tty_path\",\"state\":\"$state\",\"ts\":$ts$extra}"
 
 # Atomic write: write to a temp file then rename to avoid partial reads.
 tmp="$out_dir/$tty_base.json.tmp.$$"

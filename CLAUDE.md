@@ -36,7 +36,7 @@ See `specs/architecture.md` for the full picture. Quick map:
 | `iterm2_claude_cockpit.py` | Daemon entry point; registers iTerm2 update hooks |
 | `server/tree.py` | Builds the JSON snapshot (window → tab → pane) |
 | `server/http.py` | Serves the panel HTML and `/api/*` routes |
-| `server/actions.py` | Handles user actions: focus, create, close, bury |
+| `server/actions.py` | Handles user actions: focus, create, close |
 | `extensions/_api.py` | `ExtensionAPI` and shared `Registry` (the v1 contract) |
 | `extensions/_signals.py` | TTY-keyed signal-file reader; feeds hook payloads to enrichers |
 | `extensions/_loader.py` | Loads enabled extensions at startup |
@@ -121,11 +121,12 @@ There are no automated integration tests — iTerm2's runtime environment cannot
 
 1. `ruff check` + `ruff format --check` (lint/format)
 2. `mypy` (type checking)
-3. YAML validation for `iterm2_claude_cockpit/projects/*.yaml`
+3. `python -m unittest discover -s tests` (stdlib unit tests — iterm2-free logic only)
+4. YAML validation for `iterm2_claude_cockpit/projects/*.yaml`
 
 Manual testing: install via symlink (see CONTRIBUTING.md), run the daemon, exercise the feature in iTerm2.
 
-When adding logic that doesn't depend on the iTerm2 runtime (e.g., parsing, data transformation, path manipulation), write it in a way that can be tested in isolation. Consider adding a `tests/` directory if unit-testable logic accumulates.
+When adding logic that doesn't depend on the iTerm2 runtime (e.g., parsing, data transformation, path manipulation), write it in a way that can be tested in isolation and add a case under `tests/`. Keep tests stdlib-only and import-light — the import chain must not pull in `iterm2` (unavailable in CI), so test pure helpers in `server/persistence.py`-style modules, not anything importing `http.py`.
 
 ---
 

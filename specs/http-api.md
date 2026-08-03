@@ -135,20 +135,6 @@ Set a custom display name for a tab. The name persists in the daemon's memory un
 
 ---
 
-### `POST /api/bury`
-
-Bury (hide without closing) or unbury a session.
-
-**Request body:** `application/json`
-
-```json
-{ "id": "<session id>", "bury": true | false }
-```
-
-**Response:** `200 application/json` — `{ "ok": true }` or `{ "error": "..." }`
-
----
-
 ### `POST /api/project`
 
 Open a named project layout from `iterm2_claude_cockpit/projects/<name>.yaml`.
@@ -160,6 +146,38 @@ Open a named project layout from `iterm2_claude_cockpit/projects/<name>.yaml`.
 ```
 
 **Response:** `200 application/json` — `{ "ok": true }` or `{ "error": "..." }`
+
+---
+
+### `GET /api/restore-preview`
+
+Summarize what `POST /api/restore` would recreate, read from the in-memory saved snapshot. Used by the panel to show counts in the Restore confirmation before the user commits.
+
+**Response:** `200 application/json`
+
+```json
+{ "ok": true, "windows": 3, "tabs": 8, "panes": 14, "claude": 3 }
+```
+
+`windows`/`tabs`/`panes` — totals that would be recreated. `claude` — how many of those panes were flagged as Claude (informational; actual resumes depend on transcripts still existing). Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
+
+---
+
+### `POST /api/restore`
+
+Recreate the last saved workspace (see "Session restore" in the README). Reads the persisted layout from `~/.config/iterm2-claude-cockpit/restore.json` — the last-good snapshot, kept separate from the rolling `state.json` mirror so a relaunch can't overwrite it — and creates fresh windows/tabs/panes, sending `cd <cwd>` into each pane and `claude --resume <session-id>` into Claude panes whose transcript still exists and that aren't already open. Always creates new windows; it never modifies existing ones. Takes no request body.
+
+**Response:** `200 application/json`
+
+```json
+{ "ok": true, "restored": 5, "resumed": 3, "skipped": 1 }
+```
+
+`restored` — panes recreated. `resumed` — Claude sessions resumed via `claude --resume`. `skipped` — Claude panes recreated as a plain shell because the session was already open or its transcript was gone. If one or more windows fail to recreate, restore continues with the rest and includes an `errors` array (e.g. `"errors": ["window 2: ..."]`) alongside `"ok": true` with the counts that succeeded. Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
+
+The restored workspace is the layout as it was during the *previous* daemon session (loaded into memory from `restore.json` at startup), not the freshly relaunched layout. `restore.json` is shrink-frozen for `RESTORE_FREEZE_SECONDS` after launch, so the single-window layout iTerm2 comes back with cannot wipe the snapshot before Restore is used.
+
+`resumed`/`skipped` are non-zero only when the bundled `claude` extension is enabled — it supplies the `ext.claude.active`/`ext.claude.session_id` fields the restore logic reads. With it disabled, every pane is restored cwd-only (layout restore itself is extension-independent).
 
 ---
 

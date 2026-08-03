@@ -7,10 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Restore workspace button (⟲) in the footer icon row — after closing or updating iTerm2, recreates your windows, tabs, and panes in their saved working directories and resumes each Claude Code session via `claude --resume`. Confirms first with a summary of how many windows, tabs, and panes will be restored; non-Claude panes (and Claude panes whose transcript is gone) come back as a plain shell in the right directory.
+- Tab names now persist across restarts. The workspace layout is saved under `~/.config/iterm2-claude-cockpit/` and is the basis for the Restore button. Two files are kept: `state.json` mirrors the current layout, while `restore.json` holds the last-good layout Restore recreates — so the single-window layout iTerm2 relaunches with can't overwrite your saved workspace before you restore it.
 - `install.sh` and `uninstall.sh` at the repo root. `install.sh` validates iTerm2 + the bundled Python, cleans up any stale install (with consent), and places the AutoLaunch symlink. Idempotent; supports `--force` and `--dry-run`.
 - Settings button (⚙) in the footer icon row — opens a panel showing the plugin version and installed extensions (enabled and available-but-disabled).
 - Extension system: opt-in modules under `iterm2_claude_cockpit/extensions/<name>/` with a small `register(api)` surface for snapshot enrichment, webview asset injection (CSS/JS), and HTTP route registration. Enable/disable with `python -m iterm2_claude_cockpit ext enable|disable <name>`.
-- `claude` bundled extension: detects Claude-driven panes (job match + descendant process walk), tags them as `ext.claude.active`, and decorates them with an accent color and `✦` badge. Enabled by default; `ext disable claude` for a vanilla worktree panel.
+- `claude` bundled extension: detects Claude-driven panes (a `claude` process attached to the pane's TTY, with per-pane state driven by Claude Code hooks), tags them as `ext.claude.active`, and decorates them with an accent color and `✦` badge. Enabled by default; `ext disable claude` for a vanilla worktree panel.
 - Click the folder pill on a pane to focus it; on the active pane, the pill reveals "copy" on hover and clicking copies its working directory to the clipboard.
 - Editable tab names: hover a tab to reveal a ✎ rename button; type a new name and press Enter to save. Custom names persist until the tab or window is closed. Names are also settable programmatically via `POST /api/rename-tab`.
 - `api.add_signal_dir_source(name, directory)` — extension API primitive for receiving TTY-keyed JSON payloads from in-pane hook scripts; enables hook-driven status without polling or screen-scraping.
@@ -28,10 +30,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `claude` extension detection: replaced the fragile descendant-PID walk and broad screen-scrape with a `ps -t <tty>` check (active) and hook signal files (state). States are now `idle`, `running`, `attention`, `plan`; the `ext.claude.mode` field is renamed to `ext.claude.state`.
 
 ### Fixed
+- `claude` extension: Claude panes no longer flicker back to a plain shell — showing the foreground job (e.g. `docker-compose`) as a badge and losing their accent styling — each time Claude finishes a turn and goes idle. A pane stays recognized as Claude while a `claude` process is attached to its TTY, and reverts to a plain pane only once Claude actually exits. This realigns `ext.claude.active` with its documented meaning (a `claude` process is attached to the TTY).
 - `setup.cfg`: added `packages = find:` to prevent newer setuptools from failing with a "multiple top-level packages" error during environment setup.
 - `pyproject.toml`: corrected `license` field (was referencing a missing `LICENSE` file).
 
 ### Removed
+- Bury/unbury (send-to-background) of sessions. A pane could be hidden from its tab while left running, but the pane→tab mapping lived only in daemon memory, so buried panes silently disappeared from the panel after a daemon restart. The feature is gone: the bury/unbury buttons, the `POST /api/bury` route, and the `buried` snapshot field have been removed. Any already-buried sessions remain recoverable through iTerm2's native **Session → Buried Sessions** menu.
 - The `[iterm2]` section from `setup.cfg` (only consumed by iTerm2's Full Environment loader, no longer relevant under Basic-script install).
 - Descendant-process-tree walk from the `claude` extension (false positives on any process with "claude" in its name).
 - Broad screen-scrape classifier — replaced by a narrow plan-banner check only.

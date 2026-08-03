@@ -48,7 +48,7 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
 | `id` | string | iTerm2 tab ID (stringified) |
 | `title` | string | Display label: custom name if one is set via `POST /api/rename-tab`, otherwise `"Tab N"` (1-indexed) |
 | `active` | boolean | Whether this is the frontmost tab in its window |
-| `panes` | array | Ordered list of session nodes (visible panes first, then buried) |
+| `panes` | array | Ordered list of session nodes |
 
 ## Session node (pane)
 
@@ -62,8 +62,7 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
   "job": "nvim",
   "last_line": "-- INSERT --",
   "cwd": "/Users/igor/code/myrepo",
-  "tty": "/dev/ttys003",
-  "buried": false
+  "tty": "/dev/ttys003"
 }
 ```
 
@@ -78,7 +77,6 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
 | `last_line` | string | Last non-empty visible terminal line (max 120 chars), empty if unavailable |
 | `cwd` | string | Current working directory, empty if unknown |
 | `tty` | string | Controlling TTY path (e.g. `/dev/ttys003`), empty if unknown |
-| `buried` | boolean | Present and `true` only for buried sessions; omitted otherwise |
 
 ## Extension fields
 
@@ -104,14 +102,15 @@ Written by the `claude` extension when Claude Code is detected on a pane.
 | `ext.claude.active` | boolean | — | True if a `claude`/`claude-code` process is attached to this pane's TTY |
 | `ext.claude.state` | string | `idle`, `running`, `attention`, `plan` | Current Claude session state |
 | `ext.claude.action_needed` | boolean | — | Derived: `true` iff `state == "attention"` |
+| `ext.claude.session_id` | string | — | Claude Code session UUID, used to resume the pane via `claude --resume`; empty until the first hook fires or if unknown |
 
-State transitions are driven by Claude Code hook signal files (see `hooks/notify.sh`). The `plan` state is detected via a narrow screen-scrape of the plan-mode banner.
+State transitions are driven by Claude Code hook signal files (see `hooks/notify.sh`). The `plan` state is detected via a narrow screen-scrape of the plan-mode banner. `ext.claude.session_id` is captured from the hook payload and consumed by the workspace-restore feature.
 
 ## Invariants
 
 - Every node has a `kind` field; the webview uses it as a discriminator
 - `windows` is always present, may be empty (`[]`)
 - `tabs` within a window is always present, may be empty
-- `panes` within a tab always contains at least one session (the tab's visible sessions); buried sessions appear at the end
+- `panes` within a tab always contains at least one session (the tab's visible sessions)
 - `active` is mutually exclusive within a level: at most one window, one tab per window, and one session per tab is `active: true`
 - `id` values are stable for the lifetime of the session; they are reused by iTerm2 only after a restart

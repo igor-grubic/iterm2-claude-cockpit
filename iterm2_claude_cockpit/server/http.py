@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import threading
+import time
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -26,12 +27,15 @@ import iterm2
 from extensions import _loader as ext_loader
 from extensions._api import Registry
 
-from . import actions, tree
+from . import actions, persistence, tree
 
 log = logging.getLogger("iterm2_claude_cockpit.http")
 
 WEBVIEW_DIR = Path(__file__).resolve().parent.parent / "webview"
 _PLUGIN_VERSION = "0.1.0"  # keep in sync with __init__.py and pyproject.toml
+
+# Minimum seconds between workspace-state writes (layout changes are debounced).
+_PERSIST_DEBOUNCE_SECONDS = 5.0
 
 _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -55,24 +59,72 @@ class State:
         self.loop = loop
         self.registry: Registry = registry if registry is not None else Registry()
         self.snapshot: dict[str, Any] = {"windows": []}
-        self.buried_positions: dict[str, str] = {}  # session_id → tab_id
         self.tab_names: dict[str, str] = {}  # tab_id → custom name
         self.lock = threading.Lock()
         # Set True while a structural write (e.g. move-tab) is in flight to prevent
         # layout-change notifications from flooding iTerm2 with concurrent reads.
         self.suppress_refresh: bool = False
+        # Workspace-state persistence: debounce bookkeeping (see refresh()).
+        self._last_persist_ts: float = 0.0
+        self._last_persisted_sig: str = ""
+        self._start_monotonic: float = time.monotonic()
+        # Two files on disk (see persistence.py): state.json mirrors the *current*
+        # layout (overwritten ~1s after launch with the degraded post-relaunch one),
+        # while restore.json holds the last-good layout the rolling save never
+        # touches. Restore reads this in-memory copy of restore.json, frozen at
+        # startup, so it always brings back the *previous* session, not this one as
+        # it evolves. Fall back to state.json for installs predating the split.
+        restore = persistence.load_restore()
+        if restore is None:
+            restore = persistence.load_state()
+        self.restore_snapshot: dict[str, Any] | None = restore
+        self._restore_pane_count: int = persistence.count_panes(restore)
+        # Seed in-memory metadata from it so custom tab names survive a daemon
+        # restart (correct when iTerm2 stayed up; harmlessly ignored when its ids
+        # are stale after a full iTerm2 restart).
+        if self.restore_snapshot:
+            self.tab_names = {str(k): str(v) for k, v in (self.restore_snapshot.get("tab_names") or {}).items()}
 
     async def refresh(self) -> None:
         with self.lock:
-            buried_pos = dict(self.buried_positions)
             tab_names = dict(self.tab_names)
         try:
-            snap = await tree.build_tree(self.app, buried_pos, self.registry, tab_names)
+            snap = await tree.build_tree(self.app, self.registry, tab_names)
         except Exception as exc:
             log.exception("tree build failed: %s", exc)
             return
         with self.lock:
             self.snapshot = snap
+        self._maybe_persist(snap, tab_names)
+
+    def _maybe_persist(self, snap: dict[str, Any], tab_names: dict[str, str]) -> None:
+        """Persist workspace state to disk, debounced and only when it changed.
+
+        Runs the disk write on the default executor so it never blocks the loop.
+        """
+        now = time.monotonic()
+        if now - self._last_persist_ts < _PERSIST_DEBOUNCE_SECONDS:
+            return
+        try:
+            data = persistence.build_state(snap, tab_names)
+            sig = json.dumps(data, sort_keys=True)
+        except Exception:
+            log.exception("building persist state failed")
+            return
+        self._last_persist_ts = now
+        if sig == self._last_persisted_sig:
+            return
+        self._last_persisted_sig = sig
+        # Always mirror the current layout to state.json.
+        self.loop.run_in_executor(None, persistence.save_state, data)
+        # Update the separate restore snapshot only when safe (never empty; shrinks
+        # held off until past the startup grace window), so the single-window layout
+        # iTerm2 relaunches with can't wipe the workspace before Restore is used.
+        live_panes = persistence.count_panes(data)
+        uptime = now - self._start_monotonic
+        if persistence.should_update_restore(live_panes, self._restore_pane_count, uptime):
+            self._restore_pane_count = live_panes
+            self.loop.run_in_executor(None, persistence.save_restore, data)
 
     def get_snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -222,6 +274,24 @@ class _Handler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if path == "/api/restore-preview":
+            snap = self.state.restore_snapshot
+            if not snap:
+                self._send_json({"ok": False, "error": "no saved workspace"})
+                return
+            windows = snap.get("windows", [])
+            all_tabs = [t for w in windows for t in w.get("tabs", [])]
+            all_panes = [p for t in all_tabs for p in t.get("panes", [])]
+            self._send_json(
+                {
+                    "ok": True,
+                    "windows": len(windows),
+                    "tabs": len(all_tabs),
+                    "panes": len(all_panes),
+                    "claude": sum(1 for p in all_panes if p.get("claude")),
+                }
+            )
+            return
         if path == "/api/session-lines":
             qs = parse_qs(urlparse(self.path).query)
             session_id = (qs.get("id") or [""])[0]
@@ -256,23 +326,15 @@ class _Handler(BaseHTTPRequestHandler):
                 result = self.state.call_async(lambda: actions.new_window(self.state.connection))
                 self._send_json(result)
                 return
-            if path == "/api/bury-session":
-                sid = body.get("id", "")
-                tab_id = body.get("tab_id", "")
-                result = self.state.call_async(lambda: actions.bury_session(self.state.connection, self.state.app, sid))
-                if result.get("ok"):
-                    with self.state.lock:
-                        self.state.buried_positions[sid] = tab_id
-                self._send_json(result)
-                return
-            if path == "/api/unbury-session":
-                sid = body.get("id", "")
+            if path == "/api/restore":
+                data = self.state.restore_snapshot
+                if not data:
+                    self._send_json({"ok": False, "error": "no saved workspace"})
+                    return
                 result = self.state.call_async(
-                    lambda: actions.unbury_session(self.state.connection, self.state.app, sid)
+                    lambda: actions.restore_workspace(self.state.connection, self.state.app, data, self.state),
+                    timeout=60.0,
                 )
-                if result.get("ok"):
-                    with self.state.lock:
-                        self.state.buried_positions.pop(sid, None)
                 self._send_json(result)
                 return
             if path == "/api/split-pane":

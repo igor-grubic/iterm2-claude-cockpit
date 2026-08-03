@@ -149,7 +149,6 @@ async def _tab_node(
     tab_idx: int,
     active_tab_id,
     active_session_id: str | None,
-    buried_here: list,
     ps_output: str = "",
     registry: Registry | None = None,
     tab_names: dict[str, str] | None = None,
@@ -158,10 +157,6 @@ async def _tab_node(
     panes: list[dict] = []
     for session in tab.sessions:
         panes.append(await _session_node(session, active_session_id, ps_output, registry, signals))
-    for session in buried_here:
-        node = await _session_node(session, None, ps_output, registry, signals)
-        node["buried"] = True
-        panes.append(node)
 
     title = (tab_names or {}).get(str(tab.tab_id)) or f"Tab {tab_idx + 1}"
 
@@ -176,14 +171,10 @@ async def _tab_node(
 
 async def build_tree(
     app: iterm2.App,
-    buried_positions: dict[str, str] | None = None,
     registry: Registry | None = None,
     tab_names: dict[str, str] | None = None,
 ) -> dict:
     """Walk the App → Window → Tab → Session tree and return a JSON snapshot."""
-    if buried_positions is None:
-        buried_positions = {}
-
     loop = asyncio.get_running_loop()
     ps_output = await loop.run_in_executor(None, _run_ps)
 
@@ -192,16 +183,6 @@ async def build_tree(
         from extensions._signals import read_all as _read_signals
 
         signals = await loop.run_in_executor(None, _read_signals, registry.signal_sources)
-
-    # Index buried sessions by session_id for quick lookup
-    buried_by_tab: dict[str, list] = {}
-    try:
-        for s in app.buried_sessions or []:
-            tab_id = buried_positions.get(s.session_id)
-            if tab_id:
-                buried_by_tab.setdefault(tab_id, []).append(s)
-    except Exception:
-        pass
 
     active_window = app.current_terminal_window
     active_window_id = active_window.window_id if active_window else None
@@ -216,14 +197,12 @@ async def build_tree(
     for win_idx, window in enumerate(app.terminal_windows):
         tabs: list[dict] = []
         for tab_idx, tab in enumerate(window.tabs):
-            buried_here = buried_by_tab.get(str(tab.tab_id), [])
             tabs.append(
                 await _tab_node(
                     tab,
                     tab_idx,
                     active_tab_id,
                     active_session_id,
-                    buried_here,
                     ps_output,
                     registry,
                     tab_names,

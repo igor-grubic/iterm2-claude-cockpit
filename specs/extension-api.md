@@ -119,7 +119,7 @@ api.add_signal_dir_source("claude", "/tmp/iterm-pane-tree/claude")
 - `directory` — path to the directory; created automatically if it does not exist
 - `ttl_seconds` — defaults to `None`, meaning signals represent persistent state and live until the next hook overwrites them or the daemon restarts. Pass a positive value only if signals are events that should expire (e.g. a 5s heartbeat). Stale files left over across daemon restarts are cleaned at startup regardless.
 
-**Signal file format:** `<tty-basename>.json` (e.g. `ttys003.json`), containing at minimum `{"tty": "/dev/ttys003", "state": "<value>", "ts": <epoch>}`. Written atomically by hook scripts via tmpfile + rename.
+**Signal file format:** `<tty-basename>.json` (e.g. `ttys003.json`), containing at minimum `{"tty": "/dev/ttys003", "state": "<value>", "ts": <epoch>}`. Written atomically by hook scripts via tmpfile + rename. Sources may include extra source-specific fields — e.g. the `claude` source also writes `claude_session_id` (surfaced as `ext.claude.session_id` and used by the workspace-restore feature), and keys files by the iTerm2 session GUID rather than the TTY basename when running in daemon mode.
 
 **In the enricher:** declare `signals` as a kwarg and receive `signals["<name>"][<tty-basename>]` for the current session's TTY. The `node["tty"]` field (e.g. `/dev/ttys003`) gives the full path; `Path(tty).name` gives the basename to look up.
 
