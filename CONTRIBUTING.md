@@ -53,11 +53,9 @@ mypy iterm2_claude_cockpit/
 
 The daemon ships as an iTerm2 **AutoLaunch Basic script** — a single file symlink at `Scripts/AutoLaunch/iterm2_claude_cockpit.py` pointing at the entry script inside this repo. iTerm2 runs it with its bundled Python, which ships with the `iterm2` library. The two-level layout (`iterm2_claude_cockpit/iterm2_claude_cockpit/iterm2_claude_cockpit.py`) is just a normal Python package — outer dir is the repo, inner dir is the package. It is **not** required by iTerm2; refactor it for normal Python reasons if you need to, and update the symlink target in `install.sh` if you move the entry file.
 
-## Writing an extension
+## Project scope
 
-User-facing behavior that isn't strictly part of "manage iTerm2 windows/tabs/panes" should live in an extension under `iterm2_claude_cockpit/extensions/<name>/`, not in core. Each extension is a folder with `__init__.py` exposing `register(api)`. See the `claude` extension for a worked example and the README's [Extensions](README.md#extensions) section for the v1 API surface.
-
-Use the `ext.<name>.<field>` namespace when adding fields to session nodes. Don't write top-level snapshot keys from an extension — collisions become a future problem.
+The daemon is intentionally small and non-extensible: a live window/tab/pane tree with focus/create/split/rename/restore controls and a built-in Claude Code cheatsheet. Keep new work aligned with that scope — no plugin framework, no external runtime dependencies (stdlib + `iterm2` only), and no per-pane process polling. See `specs/` for the snapshot, HTTP, and architecture contracts before changing an interface.
 
 ## Submitting a pull request
 

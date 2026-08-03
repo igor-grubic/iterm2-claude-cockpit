@@ -1,10 +1,9 @@
 """Durable, on-disk persistence of the workspace layout for session restore.
 
 The daemon holds everything in memory and dies when iTerm2 closes. This module
-serializes a minimal layout snapshot (windows → tabs → panes, each pane's cwd and
-Claude session id) plus the in-memory `tab_names` to disk, so a later "Restore
-workspace" action can recreate the layout and resume each Claude pane via
-`claude --resume <session-id>`.
+serializes a minimal layout snapshot (windows → tabs → panes, each pane's cwd)
+plus the in-memory `tab_names` to disk, so a later "Restore workspace" action can
+recreate the layout with each pane back in its saved working directory.
 
 Two files are kept, side by side:
 
@@ -65,18 +64,7 @@ def build_state(
             live_tab_ids.add(str(tab.get("id", "")))
             panes: list[dict] = []
             for pane in tab.get("panes", []):
-                # The ext.claude.* fields come from the opt-in `claude` extension.
-                # When it's disabled they're simply absent → claude:false,
-                # session_id:"" → the pane restores cwd-only. This dependency is
-                # intentional and documented (README → Session restore); layout/cwd
-                # restore itself is extension-independent.
-                panes.append(
-                    {
-                        "cwd": pane.get("cwd", ""),
-                        "claude": bool(pane.get("ext.claude.active")),
-                        "session_id": pane.get("ext.claude.session_id", ""),
-                    }
-                )
+                panes.append({"cwd": pane.get("cwd", "")})
             # Persist the custom name only (not the auto-generated "Tab N"), keyed
             # by the live tab id which dies on restart — the name is what restore
             # re-applies to the freshly created tab.

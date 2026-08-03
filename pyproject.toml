@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "iterm2-claude-cockpit"
 version = "0.1.0"
-description = "iTerm2 toolbelt cockpit for managing many Claude Code panes — live window/tab/pane tree with per-pane Claude status, focus, create, rename, and bury controls."
+description = "iTerm2 toolbelt cockpit for managing many Claude Code panes — a live window/tab/pane tree with focus, create, split, rename, and session-restore controls."
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Igor Grubic", email = "igorgrubic@users.noreply.github.com" }]

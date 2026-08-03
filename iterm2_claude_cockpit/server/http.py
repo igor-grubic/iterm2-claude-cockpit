@@ -24,9 +24,6 @@ from urllib.parse import parse_qs, urlparse
 
 import iterm2
 
-from extensions import _loader as ext_loader
-from extensions._api import Registry
-
 from . import actions, persistence, tree
 
 log = logging.getLogger("iterm2_claude_cockpit.http")
@@ -52,12 +49,10 @@ class State:
         connection: iterm2.Connection,
         app: iterm2.App,
         loop: asyncio.AbstractEventLoop,
-        registry: Registry | None = None,
     ) -> None:
         self.connection = connection
         self.app = app
         self.loop = loop
-        self.registry: Registry = registry if registry is not None else Registry()
         self.snapshot: dict[str, Any] = {"windows": []}
         self.tab_names: dict[str, str] = {}  # tab_id → custom name
         self.lock = threading.Lock()
@@ -89,7 +84,7 @@ class State:
         with self.lock:
             tab_names = dict(self.tab_names)
         try:
-            snap = await tree.build_tree(self.app, self.registry, tab_names)
+            snap = await tree.build_tree(self.app, tab_names)
         except Exception as exc:
             log.exception("tree build failed: %s", exc)
             return
@@ -168,70 +163,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_index(self) -> None:
-        html_path = WEBVIEW_DIR / "index.html"
-        if not html_path.is_file():
-            self.send_error(404, "index.html missing")
-            return
-        html = html_path.read_text(encoding="utf-8")
-        css_tags: list[str] = []
-        js_tags: list[str] = []
-        for name, kind, relpath in self.state.registry.webview_assets:
-            url = f"/static/ext/{name}/{relpath}"
-            if kind == "css":
-                css_tags.append(f'<link rel="stylesheet" href="{url}" />')
-            elif kind == "js":
-                js_tags.append(f'<script src="{url}"></script>')
-        html = html.replace("<!-- ext:css -->", "\n  ".join(css_tags))
-        html = html.replace("<!-- ext:js -->", "\n  ".join(js_tags))
-        body = html.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", _CONTENT_TYPES[".html"])
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _serve_ext_static(self, path: str) -> None:
-        rest = path[len("/static/ext/") :]
-        if "/" not in rest:
-            self.send_error(404)
-            return
-        name, rel = rest.split("/", 1)
-        base = self.state.registry.static_dirs.get(name)
-        if base is None or not rel:
-            self.send_error(404)
-            return
-        target = (base / rel).resolve()
-        try:
-            if not target.is_relative_to(base):
-                self.send_error(404)
-                return
-        except ValueError:
-            self.send_error(404)
-            return
-        self._send_file(target)
-
-    def _dispatch_ext_route(self, method: str, path: str, body: dict | None) -> bool:
-        handler = self.state.registry.routes.get((method, path))
-        if handler is None:
-            return False
-        query = parse_qs(urlparse(self.path).query)
-        try:
-
-            async def _invoke() -> Any:
-                result = handler(self.state, body or {}, query)
-                if asyncio.iscoroutine(result):
-                    result = await result
-                return result
-
-            result = self.state.call_async(_invoke)
-            if not isinstance(result, dict):
-                result = {"ok": False, "error": "handler did not return dict"}
-            self._send_json(result)
-        except Exception as exc:
-            log.exception("ext route %s %s failed", method, path)
-            self._send_json({"ok": False, "error": str(exc)}, status=500)
-        return True
+        self._send_file(WEBVIEW_DIR / "index.html")
 
     def _read_json_body(self) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
@@ -257,22 +189,14 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/static/iterm_cheatsheet.html":
             self._send_file(WEBVIEW_DIR / "iterm_cheatsheet.html")
             return
-        if path.startswith("/static/ext/"):
-            self._serve_ext_static(path)
+        if path == "/static/claude_cheatsheet.html":
+            self._send_file(WEBVIEW_DIR / "claude_cheatsheet.html")
             return
         if path == "/api/tree":
             self._send_json(self.state.get_snapshot())
             return
         if path == "/api/about":
-            self._send_json(
-                {
-                    "version": _PLUGIN_VERSION,
-                    "extensions": {
-                        "enabled": ext_loader.list_enabled(),
-                        "available": ext_loader.list_available(),
-                    },
-                }
-            )
+            self._send_json({"version": _PLUGIN_VERSION})
             return
         if path == "/api/restore-preview":
             snap = self.state.restore_snapshot
@@ -288,7 +212,6 @@ class _Handler(BaseHTTPRequestHandler):
                     "windows": len(windows),
                     "tabs": len(all_tabs),
                     "panes": len(all_panes),
-                    "claude": sum(1 for p in all_panes if p.get("claude")),
                 }
             )
             return
@@ -300,11 +223,6 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(result)
             except Exception as exc:
                 self._send_json({"ok": False, "error": str(exc)}, status=500)
-            return
-        if path.startswith("/api/ext/"):
-            if self._dispatch_ext_route("GET", path, None):
-                return
-            self.send_error(404)
             return
         self.send_error(404)
 
@@ -383,11 +301,6 @@ class _Handler(BaseHTTPRequestHandler):
                     else:
                         self.state.tab_names.pop(tab_id, None)
                 self._send_json({"ok": True})
-                return
-            if path.startswith("/api/ext/"):
-                if self._dispatch_ext_route("POST", path, body):
-                    return
-                self.send_error(404)
                 return
         except Exception as exc:
             log.exception("action failed: %s", exc)

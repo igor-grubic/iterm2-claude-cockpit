@@ -369,7 +369,6 @@ main {
 }
 .restore-confirm-popup .restore-confirm-title  { font-weight: 600; color: var(--fg); }
 .restore-confirm-popup .restore-confirm-counts { color: var(--fg); }
-.restore-confirm-popup .restore-confirm-note   { color: var(--fg-muted); font-size: 10px; }
 .restore-confirm-popup .restore-confirm-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 2px; }
 
 /* ── footer ─────────────────────────────────────────────────────── */
@@ -424,6 +423,12 @@ footer .row.icons { justify-content: flex-end; gap: 4px; }
 .icon-btn-label { font-size: 9px; color: var(--fg-muted); letter-spacing: 0.03em; }
 .icon-btn:hover .icon-btn-glyph { color: var(--fg); }
 .icon-btn:hover .icon-btn-label { color: var(--fg); }
+
+/* Claude cheatsheet button — amber accent */
+#btn-claude { border-color: #3a2c12; }
+#btn-claude .icon-btn-glyph,
+#btn-claude .icon-btn-label { color: var(--clr-running); }
+#btn-claude:hover { border-color: var(--clr-running); }
 
 /* ── iTerm cheatsheet popup ─────────────────────────────────────── */
 .iterm-cheatsheet-popup {

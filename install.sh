@@ -200,8 +200,6 @@ Next steps:
   4. Show the panel:
        View → Toolbelt → Show Toolbelt
        Right-click the toolbelt → tick Claude Cockpit
-  5. (Optional) Wire up Claude Code status hooks:
-       python3 "$REPO/$PACKAGE_DIR/extensions/claude/hooks/install.py"
 
 Verify the daemon is running after restart:
   curl -s http://127.0.0.1:9876/ | head -3
