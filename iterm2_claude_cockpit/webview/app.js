@@ -6,6 +6,9 @@
   const IDLE_JOBS = new Set(["zsh", "-zsh", "bash", "-bash", "sh", "-sh", "fish", "-fish"]);
   function isIdle(job) { return !job || IDLE_JOBS.has(job); }
 
+  const CLAUDE_JOBS = new Set(["claude", "claude-code"]);
+  function isClaude(job) { return CLAUDE_JOBS.has(job); }
+
   let _measurePill = null;
   function pillWidth(text) {
     if (!_measurePill) {
@@ -209,7 +212,7 @@
 
   function renderPane(p, tabId) {
     const row = document.createElement("div");
-    row.className = "node pane" + (p.active ? " active" : "");
+    row.className = "node pane" + (p.active ? " active" : "") + (isClaude(p.job) ? " claude" : "");
     if (p.last_line) row.title = p.last_line;
 
     // Left action buttons — fixed at window-level left edge, always visible

@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Claude panes stand out in the tree: when a pane's foreground job is `claude` (or `claude-code`), its title is shown in yellow to distinguish it from a plain white shell.
 - Restore workspace button (⟲) in the footer icon row — after closing or updating iTerm2, recreates your windows, tabs, and panes as plain shells in their saved working directories. Confirms first with a summary of how many windows, tabs, and panes will be restored.
 - Built-in Claude Code cheatsheet (✦ button) in the footer icon row — a quick reference of slash commands and keyboard shortcuts.
 - Tab names now persist across restarts. The workspace layout is saved under `~/.config/iterm2-claude-cockpit/` and is the basis for the Restore button. Two files are kept: `state.json` mirrors the current layout, while `restore.json` holds the last-good layout Restore recreates — so the single-window layout iTerm2 relaunches with can't overwrite your saved workspace before you restore it.

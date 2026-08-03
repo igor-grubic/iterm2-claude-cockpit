@@ -25,6 +25,7 @@
   --clr-idle:    #4caf82;
   --clr-running: #e8a035;
   --clr-close:   #e05555;
+  --clr-claude:  #f6c177;
 
   /* buttons */
   --btn-bg:     #242428;
@@ -180,6 +181,11 @@ main {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Claude-driven panes: yellow title to stand apart from a plain white shell. */
+.node.pane.claude .pane-title {
+  color: var(--clr-claude);
 }
 
 /* ── folder pill ────────────────────────────────────────────────── */
