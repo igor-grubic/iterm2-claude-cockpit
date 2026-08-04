@@ -2,8 +2,9 @@
 
 The daemon holds everything in memory and dies when iTerm2 closes. This module
 serializes a minimal layout snapshot (windows → tabs → panes, each pane's cwd)
-plus the in-memory `tab_names` to disk, so a later "Restore workspace" action can
-recreate the layout with each pane back in its saved working directory.
+plus the in-memory `tab_names`/`tab_colors`/`tab_collapsed` to disk, so a later
+"Restore workspace" action can recreate the layout with each pane back in its
+saved working directory, with custom names/colors/collapsed state intact.
 
 Two files are kept, side by side:
 
@@ -34,6 +35,12 @@ _CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config
 STATE_DIR = _CONFIG_HOME / "iterm2-claude-cockpit"
 STATE_PATH = STATE_DIR / "state.json"  # rolling mirror of the current live layout
 RESTORE_PATH = STATE_DIR / "restore.json"  # last-good layout the Restore action recreates
+SETTINGS_PATH = STATE_DIR / "settings.json"  # plain UI preferences (e.g. panel theme)
+
+# Panel visual themes selectable in Settings. "2a" is the modern redesign (default);
+# "1a" is the classic terminal-styled alternative. See webview/app.js's THEMES table.
+VALID_THEMES = ("2a", "1a")
+DEFAULT_THEME = "2a"
 
 # Bump when the on-disk shape changes incompatibly; load_state tolerates older
 # files by simply returning whatever parsed (restore is defensive about fields).
@@ -49,6 +56,8 @@ RESTORE_FREEZE_SECONDS = 600.0
 def build_state(
     snapshot: dict[str, Any],
     tab_names: dict[str, str],
+    tab_colors: dict[str, int] | None = None,
+    tab_collapsed: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     """Build the persistable layout dict from the live snapshot (no timestamp).
 
@@ -56,6 +65,8 @@ def build_state(
 
     The result is deterministic, so callers can diff it to debounce writes.
     """
+    tab_colors = tab_colors or {}
+    tab_collapsed = tab_collapsed or {}
     windows: list[dict] = []
     live_tab_ids: set[str] = set()
     for window in snapshot.get("windows", []):
@@ -65,18 +76,27 @@ def build_state(
             panes: list[dict] = []
             for pane in tab.get("panes", []):
                 panes.append({"cwd": pane.get("cwd", "")})
-            # Persist the custom name only (not the auto-generated "Tab N"), keyed
-            # by the live tab id which dies on restart — the name is what restore
-            # re-applies to the freshly created tab.
-            tabs.append({"name": tab_names.get(tab.get("id", "")), "panes": panes})
+            # Persist name/color/collapsed keyed by the live tab id, which dies on
+            # restart — these are what restore re-applies to the freshly created tab.
+            tab_id = tab.get("id", "")
+            tabs.append(
+                {
+                    "name": tab_names.get(tab_id),
+                    "color": tab_colors.get(tab_id),
+                    "collapsed": tab_collapsed.get(tab_id, False),
+                    "panes": panes,
+                }
+            )
         windows.append({"tabs": tabs})
 
-    # Prune tab_names to ids still present in the live snapshot, so it can't
-    # accumulate dead-tab keys forever across restarts.
+    # Prune tab_names/tab_colors/tab_collapsed to ids still present in the live
+    # snapshot, so none of them can accumulate dead-tab keys forever across restarts.
     return {
         "version": STATE_VERSION,
         "windows": windows,
         "tab_names": {k: v for k, v in tab_names.items() if str(k) in live_tab_ids},
+        "tab_colors": {k: v for k, v in tab_colors.items() if str(k) in live_tab_ids},
+        "tab_collapsed": {k: v for k, v in tab_collapsed.items() if str(k) in live_tab_ids},
     }
 
 
@@ -130,6 +150,24 @@ def save_restore(data: dict[str, Any]) -> None:
 def load_restore() -> dict[str, Any] | None:
     """Read the restore snapshot (restore.json), or None if missing/unreadable."""
     return _read_json(RESTORE_PATH)
+
+
+def normalize_theme(value: Any) -> str:
+    """Return `value` if it's a recognized theme id, else the default theme."""
+    return value if value in VALID_THEMES else DEFAULT_THEME
+
+
+def save_settings(data: dict[str, Any]) -> None:
+    """Atomically write UI preferences (settings.json), e.g. the selected theme."""
+    try:
+        _write_json_atomic(SETTINGS_PATH, data)
+    except Exception:
+        log.exception("failed to persist settings")
+
+
+def load_settings() -> dict[str, Any] | None:
+    """Read UI preferences (settings.json), or None if missing/unreadable."""
+    return _read_json(SETTINGS_PATH)
 
 
 def count_panes(state: dict[str, Any] | None) -> int:

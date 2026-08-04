@@ -15,6 +15,11 @@ def _state(*pane_counts: int) -> dict:
     return {"windows": [{"tabs": [{"name": None, "panes": [{"cwd": "/x"} for _ in range(n)]}]} for n in pane_counts]}
 
 
+def _snapshot(*tab_ids: str) -> dict:
+    """Build a minimal live-snapshot dict (tree.build_tree's shape): one window, one tab per id."""
+    return {"windows": [{"tabs": [{"id": tid, "panes": [{"cwd": "/x"}]} for tid in tab_ids]}]}
+
+
 class CountPanesTest(unittest.TestCase):
     def test_none_and_empty(self) -> None:
         self.assertEqual(persistence.count_panes(None), 0)
@@ -24,6 +29,50 @@ class CountPanesTest(unittest.TestCase):
     def test_sums_across_windows_and_tabs(self) -> None:
         # two windows: one with 3 panes, one with 2 panes
         self.assertEqual(persistence.count_panes(_state(3, 2)), 5)
+
+
+class BuildStateTest(unittest.TestCase):
+    def test_defaults_to_empty_dicts(self) -> None:
+        data = persistence.build_state(_snapshot("t1"), {"t1": "custom"})
+        self.assertEqual(data["tab_colors"], {})
+        self.assertEqual(data["tab_collapsed"], {})
+
+    def test_prunes_dead_tab_ids(self) -> None:
+        # t1 is live, t2 no longer exists in the snapshot — must be dropped from all three.
+        data = persistence.build_state(
+            _snapshot("t1"),
+            tab_names={"t1": "keep", "t2": "gone"},
+            tab_colors={"t1": 2, "t2": 5},
+            tab_collapsed={"t1": True, "t2": False},
+        )
+        self.assertEqual(data["tab_names"], {"t1": "keep"})
+        self.assertEqual(data["tab_colors"], {"t1": 2})
+        self.assertEqual(data["tab_collapsed"], {"t1": True})
+
+    def test_embeds_color_and_collapsed_per_tab(self) -> None:
+        # restore_workspace reads color/collapsed off each tab entry directly (not the
+        # top-level dicts, since old tab ids die on a real restart) to re-apply them to
+        # the freshly created tab — so they must round-trip through the per-tab dict too.
+        data = persistence.build_state(
+            _snapshot("t1"),
+            tab_names={},
+            tab_colors={"t1": 3},
+            tab_collapsed={"t1": True},
+        )
+        tab = data["windows"][0]["tabs"][0]
+        self.assertEqual(tab["color"], 3)
+        self.assertTrue(tab["collapsed"])
+
+
+class NormalizeThemeTest(unittest.TestCase):
+    def test_valid_passthrough(self) -> None:
+        self.assertEqual(persistence.normalize_theme("1a"), "1a")
+        self.assertEqual(persistence.normalize_theme("2a"), "2a")
+
+    def test_invalid_or_missing_defaults_to_2a(self) -> None:
+        self.assertEqual(persistence.normalize_theme(None), "2a")
+        self.assertEqual(persistence.normalize_theme("bogus"), "2a")
+        self.assertEqual(persistence.normalize_theme(""), "2a")
 
 
 class ShouldUpdateRestoreTest(unittest.TestCase):

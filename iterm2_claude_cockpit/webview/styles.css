@@ -1,35 +1,110 @@
+/* ── fonts (bundled locally — no runtime network dependency) ───────── */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 400 700; /* variable font: one file covers the whole weight range */
+  font-display: swap;
+  src: url('/static/fonts/space-grotesk-variable.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/ibm-plex-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/ibm-plex-mono-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500; /* variable font: one file covers the range the "1a" theme uses */
+  font-display: swap;
+  src: url('/static/fonts/jetbrains-mono-variable.woff2') format('woff2');
+}
+
 /* ── design tokens ──────────────────────────────────────────────── */
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 
   /* surfaces */
-  --bg:         #18181b;
-  --bg-surface: #222226;
-  --bg-hover:   #2b2b30;
-  --bg-active:  #193452;
+  --bg:         #15171b;
+  --bg-surface: #1a1d22;
+  --bg-hover:   #21252b;
+  --bg-active:  #21252b;
+  --border:     #272b33;
 
   /* text */
-  --fg:         #dde1e8;
-  --fg-muted:   #80808c;
-  --fg-dim:     #42424e;
+  --fg:           #eceff3;
+  --fg-title-on:  #ffffff;
+  --fg-muted:     #79818b;
+  --fg-dim:       #656d78;
+  --fg-path:      #6f7782;
 
-  /* chrome */
-  --border:     #2e2e38;
-  --accent:     #4ea1ff;
+  --accent: #4ea1ff;
 
-  /* hierarchy accents */
-  --clr-window: #6878a8;
-  --clr-tab:    #4a7a90;
+  /* The full 6-color group palette is per-tab, per-theme, and computed dynamically, so
+     it lives in app.js's THEMES table, not here. This is just the "2a" theme's palette
+     index 0, used as the bottom nav's active-tab underline. */
+  --grp-0: #e2685f;
 
-  /* semantic */
-  --clr-idle:    #4caf82;
-  --clr-running: #e8a035;
-  --clr-close:   #e05555;
+  --clr-attention: #f5a623;
+  --clr-close:     #e05555;
+  /* Fixed regardless of theme/group color — mirrors app.js's CLAUDE_YELLOW constant. */
+  --clr-claude:    #f6c177;
 
   /* buttons */
-  --btn-bg:     #242428;
-  --btn-border: #38383e;
-  --btn-hover:  #30303a;
+  --btn-bg:     #21252b;
+  --btn-border: #272b33;
+  --btn-hover:  #2b2f38;
+
+  /* radii */
+  --radius-group:  12px;
+  --radius-row:    9px;
+  --radius-btn:    8px;
+  --radius-swatch: 4px;
+  --radius-chip:   5px;
+}
+
+/* ── "1a" theme (Classic) — redefine the shared tokens so unscoped chrome rules
+   (footer, buttons, bottom nav, popups) re-skin automatically. Structural elements that
+   differ between themes (groups, panes) use entirely separate classes below instead. */
+body[data-theme="1a"] {
+  --bg:         #0b1f24;
+  --bg-surface: #0d262c;
+  --bg-hover:   #123138;
+  --border:     #17383f;
+  --fg-muted:   #567b80;
+  --fg-dim:     #4d7178;
+  --fg-path:    #4f7178;
+  --btn-bg:     transparent;
+  --btn-border: #1e454c;
+  --btn-hover:  #123138;
+  --radius-btn: 5px;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+}
+
+body[data-theme="1a"] .window-label { font-size: 10.5px; letter-spacing: 0.16em; }
+
+body[data-theme="1a"] .window-meta { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+
+body[data-theme="1a"] .filter-chip { width: 13px; height: 13px; border-radius: 3px; }
+
+body[data-theme="1a"] button { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; font-size: 11.5px; color: #cfe3e0; }
+
+body[data-theme="1a"] .kbd { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; color: #446a71; }
+
+body[data-theme="1a"] .nav-btn { font-size: 10px; letter-spacing: 0.08em; }
+
+body[data-theme="1a"] .nav-btn.active {
+  font-weight: 400;
+  color: #f6c177;
+  box-shadow: inset 0 2px 0 #f6c177; /* overline, not 2a's underline */
 }
 
 * { box-sizing: border-box; }
@@ -38,7 +113,7 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font: 12px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font: 13px/1.4 'Space Grotesk', -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   background: var(--bg);
   color: var(--fg);
 }
@@ -62,216 +137,113 @@ body { display: flex; flex-direction: column; }
 main {
   flex: 1;
   overflow: auto;
-  padding: 4px 0 0;
 }
 
-.tree {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.tree { display: flex; flex-direction: column; }
+
+.tree-empty {
+  padding: 14px 16px;
+  color: var(--fg-muted);
 }
 
-/* ── base node ──────────────────────────────────────────────────── */
-.node {
+/* ── window section ─────────────────────────────────────────────── */
+.window-block { display: flex; flex-direction: column; }
+
+.window-meta {
   display: flex;
   align-items: center;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  user-select: none;
-  border-left: 2px solid transparent;
-  transition: background 0.08s;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 12px;
 }
 
-/* ── windows — section headers ──────────────────────────────────── */
-.node.window {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--clr-window);
-  background: var(--bg-surface);
-  border-left-color: var(--clr-window);
-  padding: 9px 8px 7px;
-  margin-top: 2px;
-}
-
-.node.window:first-child { margin-top: 0; }
-.node.window:hover       { background: var(--bg-hover); }
-.node.window.active      { color: #a0b4d8; border-left-color: var(--accent); }
-
-/* ── tabs ───────────────────────────────────────────────────────── */
-.node.tab {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--clr-tab);
-  background: var(--bg-surface);
-  border-left-color: var(--clr-tab);
-  padding: 7px 8px 5px 22px;
-}
-
-.node.tab:hover    { background: var(--bg-hover); }
-.node.tab.active   { color: #88b8cc; border-left-color: var(--accent); }
-.node.tab.drag-over { border-left-color: var(--accent); background: rgba(136, 184, 204, 0.12); }
-.node.tab.dragging  { opacity: 0.4; }
-
-.node.tab .node-label {
-  flex: 0 1 auto;
-  max-width: calc(100% - 100px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.tab-edit-btn {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
+.window-label {
   font-size: 11px;
-  background: var(--btn-bg);
-  border: 1px solid var(--btn-border);
-  border-radius: 5px;
-  cursor: pointer;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--fg-muted);
-  flex-shrink: 0;
-  margin-left: 4px;
-  transition: background 0.1s, border-color 0.1s, color 0.1s;
-}
-.node.tab:hover .tab-edit-btn { display: inline-flex; }
-.tab-edit-btn:hover { background: var(--btn-hover); border-color: #555562; color: var(--fg); }
-
-.tab-edit-input {
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--accent);
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  outline: none;
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-}
-
-/* ── panes — the stars ──────────────────────────────────────────── */
-.node.pane {
-  font-size: 13px;
-  color: var(--fg);
-  padding: 5px 8px 5px 0;
-  min-height: 34px;
-}
-
-.node.pane:hover { background: var(--bg-hover); }
-
-.node.pane.active {
-  background: var(--bg-active);
-  color: #fff;
-  border-left-color: var(--accent);
-}
-
-
-/* ── labels ─────────────────────────────────────────────────────── */
-.node-label,
-.pane-title {
-  flex: 1;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* ── folder pill ────────────────────────────────────────────────── */
-.pane-folder-pill {
-  font-size: 10px;
-  font-family: ui-monospace, Menlo, monospace;
-  color: var(--fg-muted);
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 5px;
-  flex-shrink: 0;
-  margin-right: 4px;
+.filter-chips { display: flex; gap: 6px; flex-shrink: 0; }
+
+.filter-chip {
+  width: 24px;
+  height: 9px;
+  border-radius: var(--radius-chip);
   cursor: pointer;
-  transition: background 0.1s, border-color 0.1s, color 0.1s;
 }
 
-.pane-folder-pill:hover {
-  color: var(--fg);
-  background: var(--btn-hover);
-  border-color: #555562;
-}
-
-.pane-folder-pill.pill-copyable {
-  text-align: center;
-}
-
-.node.pane.active .pane-folder-pill {
-  color: rgba(255,255,255,0.55);
-  background: rgba(255,255,255,0.08);
-  border-color: rgba(255,255,255,0.15);
-}
-
-.node.pane.active .pane-folder-pill:hover {
-  color: #fff;
-  background: rgba(255,255,255,0.18);
-  border-color: rgba(255,255,255,0.35);
-}
-
-/* ── caret / bullet ─────────────────────────────────────────────── */
-.caret {
-  display: inline-block;
-  width: 12px;
-  text-align: center;
-  color: var(--fg-dim);
-  margin-right: 3px;
-  flex-shrink: 0;
-  font-size: 10px;
-  line-height: 1;
-}
-
-.node.window .caret,
-.node.tab .caret {
-  font-size: 14px;
-  width: 16px;
-  cursor: pointer;
-  transition: color 0.1s;
-}
-
-.node.window .caret { color: var(--clr-window); }
-.node.tab .caret    { color: var(--clr-tab); }
-
-.node.window .caret:hover,
-.node.tab .caret:hover {
-  color: var(--fg);
-}
-
-/* ── job badge ──────────────────────────────────────────────────── */
-.node-job {
-  font-size: 10px;
-  font-family: ui-monospace, Menlo, monospace;
-  color: var(--fg-muted);
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 5px;
-  flex-shrink: 0;
-  pointer-events: none;
-  margin-right: 4px;
-}
-
-/* ── pane left action strip ─────────────────────────────────────── */
-.pane-left-actions {
+/* ── group list ─────────────────────────────────────────────────── */
+.group-list {
+  padding: 0 12px 18px;
   display: flex;
-  gap: 2px;
-  flex-shrink: 0;
-  padding: 0 5px 0 6px;
-  align-items: center;
+  flex-direction: column;
+  gap: 14px;
 }
 
-/* ── action buttons ─────────────────────────────────────────────── */
-.pane-action-btn {
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 10px;
+  border-radius: var(--radius-group);
+  transition: background 0.1s, box-shadow 0.1s;
+}
+
+/* outline (not box-shadow) so this doesn't collide with the inline spine box-shadow
+   set on every render */
+.group.dragging  { opacity: 0.4; }
+.group.drag-over { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: var(--radius-row);
+  cursor: pointer;
+}
+
+.group-swatch {
+  width: 13px;
+  height: 13px;
+  border-radius: var(--radius-swatch);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.group-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-count {
+  font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+
+.group-caret {
+  font-size: 9px;
+  color: var(--fg-dim);
+  width: 10px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.group-edit-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -286,44 +258,177 @@ main {
   flex-shrink: 0;
   transition: background 0.1s, border-color 0.1s, color 0.1s;
 }
+.group-edit-btn:hover { background: var(--btn-hover); border-color: #555562; color: var(--fg); }
 
-.pane-action-btn:hover {
-  background: var(--btn-hover);
-  border-color: #555562;
-  color: var(--fg);
+.group-edit-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--accent);
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
 }
 
-.action-idle    { color: var(--clr-idle);    border-color: #1c3826; }
-.action-running { color: var(--clr-running); border-color: #3a2c12; }
-.action-idle:hover    { border-color: var(--clr-idle); }
-.action-running:hover { border-color: var(--clr-running); }
+/* ── "1a" group list — flat accent-bar groups, no rounded block/tint ─────── */
+.group-list-classic { padding: 6px 0 14px; }
 
-.pane-close-btn { color: var(--clr-close); border-color: #3a1c1c; }
+/* A horizontal rule between groups so section boundaries stay clear even when a group
+   has no color assigned (the left accent bar alone is too subtle then). No extra margin/
+   padding — stays as compact as before. */
+.group-classic {
+  margin: 2px 0;
+  border-top: 1px solid var(--border);
+}
+.group-list-classic .group-classic:first-child {
+  border-top: none;
+}
+
+.group-classic.dragging  { opacity: 0.4; }
+.group-classic.drag-over { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+.group-classic-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 6px 9px;
+  cursor: pointer;
+}
+
+.group-caret-classic {
+  font-size: 9px;
+  color: var(--fg-dim);
+  width: 9px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* same .group-name element/behavior as "2a" (shared by startGroupEdit), resized here */
+.group-classic .group-name { font-size: 10.5px; font-weight: 500; letter-spacing: 0.13em; }
+
+.group-swatch-classic {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* ── pane rows ──────────────────────────────────────────────────── */
+.pane-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 13px;
+  border-radius: var(--radius-row);
+  cursor: pointer;
+  user-select: none;
+}
+
+.pane-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.pane-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pane-title {
+  /* color is set inline per-row in app.js (depends on active + filter-dim state) */
+  font-size: 14.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-path {
+  font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: var(--fg-path);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.pane-row.active .pane-path { cursor: pointer; }
+
+.pane-status {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.pane-close-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--clr-close);
+}
 .pane-close-btn:hover { background: #2e1414; border-color: var(--clr-close); }
 
-/* ── status popup ───────────────────────────────────────────────── */
-.status-popup .status-row   { display: flex; gap: 8px; line-height: 1.9; }
-.status-popup .status-label { color: var(--fg-muted); min-width: 36px; font-size: 10px; }
-.status-popup .status-value { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status-divider             { border-top: 1px solid var(--border); margin: 5px 0; }
-
-.lines-popup {
-  position: fixed;
-  z-index: 100;
-  background: #16161a;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
-  color: var(--fg);
-  max-height: 220px;
-  overflow-y: auto;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.65);
+/* ── "1a" pane rows — a glyph mark instead of a dot, no status word, path
+   inline-right instead of stacked under the title ──────────────────────── */
+.pane-row-classic {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 12px 6px 13px;
+  margin-left: -2px;
+  cursor: pointer;
+  user-select: none;
 }
 
-.lines-line  { white-space: pre; line-height: 1.7; }
-.lines-empty { color: var(--fg-muted); font-style: italic; }
+.pane-mark {
+  width: 8px;
+  flex-shrink: 0;
+  font-size: 11px;
+  text-align: center;
+}
+
+.pane-title-classic {
+  /* color is set inline per-row in app.js (depends on active + filter-dim state) */
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-path-classic {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--fg-path);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.pane-row-classic.active .pane-path-classic { cursor: pointer; }
 
 /* ── confirm popup ──────────────────────────────────────────────── */
 .confirm-popup {
@@ -375,60 +480,67 @@ main {
 footer {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 8px;
+  gap: 6px;
+  padding: 10px 16px;
   border-top: 1px solid var(--border);
-  background: var(--bg-surface);
+  background: var(--bg);
 }
 
-footer .row { display: flex; gap: 5px; }
+footer .row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 
 button {
-  flex: 1;
-  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 13px;
   background: var(--btn-bg);
   color: var(--fg);
   border: 1px solid var(--btn-border);
-  border-radius: 5px;
-  font: 11px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  border-radius: var(--radius-btn);
+  font: 13px 'Space Grotesk', sans-serif;
   cursor: pointer;
   transition: background 0.1s, border-color 0.1s;
 }
 
-button:hover { background: var(--btn-hover); border-color: #555562; }
+button:hover { background: var(--btn-hover); border-color: #363b44; }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 button.primary:hover { background: #6cb1ff; }
 
-
 .kbd {
-  font-size: 10px;
-  color: var(--fg-dim);
+  font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: #666e79;
   margin-left: 2px;
 }
 
-/* ── icon-btn row (compact cheatsheet / settings buttons) ────────── */
-footer .row.icons { justify-content: flex-end; gap: 4px; }
-
-.icon-btn {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 52px;
-  padding: 4px 8px;
-  gap: 2px;
+/* ── bottom nav (iTerm / Claude / Settings / Restore) ────────────── */
+footer .row.icons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  margin: 0 -16px -10px;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
 }
 
-.icon-btn-glyph { font-size: 14px; line-height: 1; color: var(--fg-dim); }
-.icon-btn-label { font-size: 9px; color: var(--fg-muted); letter-spacing: 0.03em; }
-.icon-btn:hover .icon-btn-glyph { color: var(--fg); }
-.icon-btn:hover .icon-btn-label { color: var(--fg); }
+.nav-btn {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+  justify-content: center;
+  padding: 11px 0;
+  font-size: 11.5px;
+  color: var(--fg-muted);
+}
 
-/* Claude cheatsheet button — amber accent */
-#btn-claude { border-color: #3a2c12; }
-#btn-claude .icon-btn-glyph,
-#btn-claude .icon-btn-label { color: var(--clr-running); }
-#btn-claude:hover { border-color: var(--clr-running); }
+.nav-btn:hover { background: var(--bg-hover); border-color: transparent; }
+
+.nav-btn.active {
+  font-weight: 700;
+  color: var(--fg-title-on);
+  box-shadow: inset 0 -2px 0 var(--grp-0);
+}
 
 /* ── iTerm cheatsheet popup ─────────────────────────────────────── */
 .iterm-cheatsheet-popup {
@@ -466,14 +578,21 @@ footer .row.icons { justify-content: flex-end; gap: 4px; }
 }
 
 .iterm-cheatsheet-close {
+  /* explicit display/alignment so this doesn't inherit the generic `button` rule's
+     `justify-content: space-between`, which pushed the × to one corner of the box
+     instead of centering it — leaving most of the visible glyph outside the real,
+     small click target */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   padding: 0;
-  font-size: 16px;
+  font-size: 18px;
   line-height: 1;
-  background: transparent;
-  border: 1px solid transparent;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
   color: var(--fg-muted);
   cursor: pointer;
   border-radius: 4px;
@@ -506,7 +625,7 @@ footer .row.icons { justify-content: flex-end; gap: 4px; }
 .iterm-cheatsheet-body .cheatsheet-table {
   width: 100%;
   border-collapse: collapse;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
   font-size: 10px;
   table-layout: fixed;
 }
@@ -537,7 +656,7 @@ footer .row.icons { justify-content: flex-end; gap: 4px; }
 
 .iterm-cheatsheet-body .cheatsheet-table code {
   font: inherit;
-  color: var(--clr-running);
+  color: var(--clr-attention);
   background: transparent;
   padding: 0;
 }
@@ -597,6 +716,21 @@ footer .row.icons { justify-content: flex-end; gap: 4px; }
 
 .iterm-cheatsheet-body .settings-list dt:last-of-type,
 .iterm-cheatsheet-body .settings-list dd:last-child { border-bottom: none; }
+
+.settings-theme-row { display: flex; gap: 6px; }
+
+.settings-theme-btn {
+  flex: none;
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 5px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.settings-theme-btn:hover { background: var(--btn-hover); color: var(--fg); }
+.settings-theme-btn.active { border-color: var(--accent); color: var(--fg); }
 
 /* ── misc ───────────────────────────────────────────────────────── */
 .hidden { display: none !important; }

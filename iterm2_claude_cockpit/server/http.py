@@ -38,6 +38,15 @@ _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
+    ".woff2": "font/woff2",
+}
+
+# Bundled webfonts served under /static/fonts/<name> — see webview/fonts/.
+_FONT_FILES = {
+    "space-grotesk-variable.woff2",
+    "ibm-plex-mono-400.woff2",
+    "ibm-plex-mono-500.woff2",
+    "jetbrains-mono-variable.woff2",
 }
 
 
@@ -55,6 +64,9 @@ class State:
         self.loop = loop
         self.snapshot: dict[str, Any] = {"windows": []}
         self.tab_names: dict[str, str] = {}  # tab_id → custom name
+        self.tab_colors: dict[str, int] = {}  # tab_id → group color index (0-5)
+        self.tab_collapsed: dict[str, bool] = {}  # tab_id → group collapsed state
+        self.theme: str = persistence.normalize_theme((persistence.load_settings() or {}).get("theme"))
         self.lock = threading.Lock()
         # Set True while a structural write (e.g. move-tab) is in flight to prevent
         # layout-change notifications from flooding iTerm2 with concurrent reads.
@@ -74,25 +86,37 @@ class State:
             restore = persistence.load_state()
         self.restore_snapshot: dict[str, Any] | None = restore
         self._restore_pane_count: int = persistence.count_panes(restore)
-        # Seed in-memory metadata from it so custom tab names survive a daemon
-        # restart (correct when iTerm2 stayed up; harmlessly ignored when its ids
-        # are stale after a full iTerm2 restart).
+        # Seed in-memory metadata from it so custom tab names/colors/collapsed
+        # state survive a daemon restart (correct when iTerm2 stayed up; harmlessly
+        # ignored when its ids are stale after a full iTerm2 restart).
         if self.restore_snapshot:
             self.tab_names = {str(k): str(v) for k, v in (self.restore_snapshot.get("tab_names") or {}).items()}
+            self.tab_colors = {str(k): int(v) for k, v in (self.restore_snapshot.get("tab_colors") or {}).items()}
+            self.tab_collapsed = {
+                str(k): bool(v) for k, v in (self.restore_snapshot.get("tab_collapsed") or {}).items()
+            }
 
     async def refresh(self) -> None:
         with self.lock:
             tab_names = dict(self.tab_names)
+            tab_colors = dict(self.tab_colors)
+            tab_collapsed = dict(self.tab_collapsed)
         try:
-            snap = await tree.build_tree(self.app, tab_names)
+            snap = await tree.build_tree(self.app, tab_names, tab_colors, tab_collapsed)
         except Exception as exc:
             log.exception("tree build failed: %s", exc)
             return
         with self.lock:
             self.snapshot = snap
-        self._maybe_persist(snap, tab_names)
+        self._maybe_persist(snap, tab_names, tab_colors, tab_collapsed)
 
-    def _maybe_persist(self, snap: dict[str, Any], tab_names: dict[str, str]) -> None:
+    def _maybe_persist(
+        self,
+        snap: dict[str, Any],
+        tab_names: dict[str, str],
+        tab_colors: dict[str, int],
+        tab_collapsed: dict[str, bool],
+    ) -> None:
         """Persist workspace state to disk, debounced and only when it changed.
 
         Runs the disk write on the default executor so it never blocks the loop.
@@ -101,7 +125,7 @@ class State:
         if now - self._last_persist_ts < _PERSIST_DEBOUNCE_SECONDS:
             return
         try:
-            data = persistence.build_state(snap, tab_names)
+            data = persistence.build_state(snap, tab_names, tab_colors, tab_collapsed)
             sig = json.dumps(data, sort_keys=True)
         except Exception:
             log.exception("building persist state failed")
@@ -120,6 +144,32 @@ class State:
         if persistence.should_update_restore(live_panes, self._restore_pane_count, uptime):
             self._restore_pane_count = live_panes
             self.loop.run_in_executor(None, persistence.save_restore, data)
+
+    def flush_now(self) -> None:
+        """Synchronously persist the current in-memory state, bypassing the debounce and
+        the executor hand-off in `_maybe_persist`.
+
+        Called right before the daemon process exits (signal handler / atexit in the entry
+        point) — by then there's no later event-loop tick left to run a backgrounded
+        `run_in_executor` write, and the debounce window may not have elapsed since the last
+        change (e.g. a color set moments before a daemon reload), so without this the change
+        is silently lost.
+        """
+        with self.lock:
+            snap = self.snapshot
+            tab_names = dict(self.tab_names)
+            tab_colors = dict(self.tab_colors)
+            tab_collapsed = dict(self.tab_collapsed)
+        try:
+            data = persistence.build_state(snap, tab_names, tab_colors, tab_collapsed)
+        except Exception:
+            log.exception("building shutdown-flush state failed")
+            return
+        persistence.save_state(data)
+        live_panes = persistence.count_panes(data)
+        uptime = time.monotonic() - self._start_monotonic
+        if persistence.should_update_restore(live_panes, self._restore_pane_count, uptime):
+            persistence.save_restore(data)
 
     def get_snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -192,11 +242,17 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/static/claude_cheatsheet.html":
             self._send_file(WEBVIEW_DIR / "claude_cheatsheet.html")
             return
+        if path.startswith("/static/fonts/") and path.rsplit("/", 1)[-1] in _FONT_FILES:
+            self._send_file(WEBVIEW_DIR / "fonts" / path.rsplit("/", 1)[-1])
+            return
         if path == "/api/tree":
             self._send_json(self.state.get_snapshot())
             return
         if path == "/api/about":
             self._send_json({"version": _PLUGIN_VERSION})
+            return
+        if path == "/api/settings":
+            self._send_json({"theme": self.state.theme})
             return
         if path == "/api/restore-preview":
             snap = self.state.restore_snapshot
@@ -301,6 +357,38 @@ class _Handler(BaseHTTPRequestHandler):
                     else:
                         self.state.tab_names.pop(tab_id, None)
                 self._send_json({"ok": True})
+                return
+            if path == "/api/set-tab-color":
+                tab_id = body.get("id", "")
+                if not tab_id:
+                    self._send_json({"ok": False, "error": "no tab id"})
+                    return
+                color = body.get("color")
+                with self.state.lock:
+                    if color is None:
+                        self.state.tab_colors.pop(tab_id, None)
+                    else:
+                        self.state.tab_colors[tab_id] = int(color)
+                self._send_json({"ok": True})
+                return
+            if path == "/api/set-tab-collapsed":
+                tab_id = body.get("id", "")
+                if not tab_id:
+                    self._send_json({"ok": False, "error": "no tab id"})
+                    return
+                with self.state.lock:
+                    if body.get("collapsed"):
+                        self.state.tab_collapsed[tab_id] = True
+                    else:
+                        self.state.tab_collapsed.pop(tab_id, None)
+                self._send_json({"ok": True})
+                return
+            if path == "/api/settings":
+                theme = persistence.normalize_theme(body.get("theme"))
+                with self.state.lock:
+                    self.state.theme = theme
+                persistence.save_settings({"theme": theme})
+                self._send_json({"ok": True, "theme": theme})
                 return
         except Exception as exc:
             log.exception("action failed: %s", exc)

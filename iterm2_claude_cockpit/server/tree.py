@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
 import iterm2
+
+from . import claude_detect
 
 log = logging.getLogger("iterm2_claude_cockpit.tree")
 
@@ -59,7 +62,11 @@ def _path_label(cwd: str) -> str:
     return (name[:10] + "…") if len(name) > 10 else name
 
 
-async def _session_node(session: iterm2.Session, active_session_id: str | None) -> dict:
+async def _session_node(
+    session: iterm2.Session,
+    active_session_id: str | None,
+    claude_ttys: set[str],
+) -> dict:
     job, last_line = await _session_status(session)
     cwd = await _get_var(session, "path") or ""
     tty = await _get_var(session, "tty") or ""
@@ -76,6 +83,7 @@ async def _session_node(session: iterm2.Session, active_session_id: str | None) 
         "last_line": last_line,
         "cwd": cwd,
         "tty": tty,
+        "claude": claude_detect.tty_base(tty) in claude_ttys,
     }
 
 
@@ -85,23 +93,34 @@ async def _tab_node(
     active_tab_id,
     active_session_id: str | None,
     tab_names: dict[str, str] | None = None,
+    claude_ttys: set[str] | None = None,
+    tab_colors: dict[str, int] | None = None,
+    tab_collapsed: dict[str, bool] | None = None,
 ) -> dict:
     panes: list[dict] = []
     for session in tab.sessions:
-        panes.append(await _session_node(session, active_session_id))
+        panes.append(await _session_node(session, active_session_id, claude_ttys or set()))
 
-    title = (tab_names or {}).get(str(tab.tab_id)) or f"Tab {tab_idx + 1}"
+    tab_id = str(tab.tab_id)
+    title = (tab_names or {}).get(tab_id) or f"Tab {tab_idx + 1}"
 
     return {
         "kind": "tab",
-        "id": str(tab.tab_id),
+        "id": tab_id,
         "title": title,
         "active": str(tab.tab_id) == str(active_tab_id) if active_tab_id is not None else False,
         "panes": panes,
+        "color": (tab_colors or {}).get(tab_id),
+        "collapsed": bool((tab_collapsed or {}).get(tab_id, False)),
     }
 
 
-async def build_tree(app: iterm2.App, tab_names: dict[str, str] | None = None) -> dict:
+async def build_tree(
+    app: iterm2.App,
+    tab_names: dict[str, str] | None = None,
+    tab_colors: dict[str, int] | None = None,
+    tab_collapsed: dict[str, bool] | None = None,
+) -> dict:
     """Walk the App → Window → Tab → Session tree and return a JSON snapshot."""
     active_window = app.current_terminal_window
     active_window_id = active_window.window_id if active_window else None
@@ -112,11 +131,27 @@ async def build_tree(app: iterm2.App, tab_names: dict[str, str] | None = None) -
     active_session = active_tab.current_session if active_tab else None
     active_session_id = active_session.session_id if active_session else None
 
+    # One `ps` call for every pane, off the event loop, to spot Claude panes
+    # (which report a `node` foreground job — see claude_detect).
+    loop = asyncio.get_running_loop()
+    claude_ttys = await loop.run_in_executor(None, claude_detect.claude_ttys)
+
     windows: list[dict] = []
     for win_idx, window in enumerate(app.terminal_windows):
         tabs: list[dict] = []
         for tab_idx, tab in enumerate(window.tabs):
-            tabs.append(await _tab_node(tab, tab_idx, active_tab_id, active_session_id, tab_names))
+            tabs.append(
+                await _tab_node(
+                    tab,
+                    tab_idx,
+                    active_tab_id,
+                    active_session_id,
+                    tab_names,
+                    claude_ttys,
+                    tab_colors,
+                    tab_collapsed,
+                )
+            )
 
         tab_count = len(tabs)
         suffix = "1 tab" if tab_count == 1 else f"{tab_count} tabs"

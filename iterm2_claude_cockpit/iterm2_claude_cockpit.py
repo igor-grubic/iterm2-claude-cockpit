@@ -10,7 +10,10 @@ notifications and refreshes a cached tree snapshot. The webview polls
 from __future__ import annotations
 
 import asyncio
+import atexit
 import logging
+import os
+import signal
 import sys
 from pathlib import Path
 
@@ -41,6 +44,19 @@ async def main(connection: iterm2.Connection) -> None:
 
     await state.refresh()
     http_server.start_server_thread(state, HOST, PORT)
+
+    # Guarantee unsaved changes (e.g. a tab color set moments ago, still inside the 5s
+    # persist debounce) survive a daemon restart. Without this, the only writes to disk are
+    # debounced and backgrounded (see State._maybe_persist) — nothing forces one to finish
+    # before the process exits.
+    def _flush_and_exit(sig_name: str) -> None:
+        log.info("received %s — flushing workspace state before exit", sig_name)
+        state.flush_now()
+        os._exit(0)
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _flush_and_exit, sig.name)
+    atexit.register(state.flush_now)  # best-effort fallback for other exit paths
 
     async def _periodic_refresh() -> None:
         while True:
