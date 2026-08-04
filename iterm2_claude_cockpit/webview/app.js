@@ -267,6 +267,9 @@
     header.className = "group-header";
     header.draggable = true;
     wireGroupDrag(header, wrap, t);
+    // A noticeably stronger fill than the body's soft tint, so the header reads as a
+    // header at a glance instead of blending into its own panes.
+    header.style.background = dim ? (col ? rgba(col, 0.05) : "transparent") : (col ? rgba(col, 0.24) : "#1a1d22");
 
     const swatch = document.createElement("span");
     swatch.className = "group-swatch";
@@ -397,6 +400,9 @@
     header.className = "group-classic-header";
     header.draggable = true;
     wireGroupDrag(header, wrap, t);
+    // 1a is otherwise flat (no row backgrounds at all) — give the header a fill anyway,
+    // so it still reads as a header at a glance instead of blending into its own panes.
+    header.style.background = dim ? "transparent" : (col ? rgba(col, 0.3) : "rgba(255,255,255,.07)");
 
     const caret = document.createElement("span");
     caret.className = "group-caret-classic";
