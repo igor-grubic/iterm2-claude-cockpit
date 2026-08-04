@@ -1,7 +1,0 @@
-name: example
-tabs:
-  - title: editor
-    cwd: ~/code/myproject
-  - title: dev server
-    cwd: ~/code/myproject
-    cmd: npm run dev

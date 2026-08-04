@@ -72,6 +72,24 @@ See `specs/snapshot-format.md` for the full schema.
 
 ---
 
+### `GET /api/session-lines`
+
+Return the last non-empty visible lines of a session, most recent last. Used by the panel's per-pane status popup.
+
+**Query parameters:**
+
+- `id` — the session id to read.
+
+**Response:** `200 application/json`
+
+```json
+{ "ok": true, "lines": ["...", "..."] }
+```
+
+Up to 10 lines are returned. Returns `{ "ok": false, "error": "..." }` (status `500` on an unexpected failure) when the session is missing or its contents can't be read.
+
+---
+
 ### `POST /api/focus`
 
 Focus a window, tab, or pane.
@@ -96,7 +114,7 @@ On error:
 
 ---
 
-### `POST /api/close`
+### `POST /api/close-session`
 
 Close a session (pane).
 
@@ -106,21 +124,47 @@ Close a session (pane).
 { "id": "<session id>" }
 ```
 
-**Response:** `200 application/json` — `{ "ok": true }` or `{ "error": "..." }`
+**Response:** `200 application/json` — `{ "ok": true }` or `{ "ok": false, "error": "..." }`
 
 ---
 
-### `POST /api/create`
+### `POST /api/new-tab`
 
-Create a new tab or window.
+Create a new tab. Added to `window_id` when supplied, otherwise the current terminal window.
 
 **Request body:** `application/json`
 
 ```json
-{ "kind": "tab" | "window" }
+{ "window_id": "<window id>" }
 ```
 
-**Response:** `200 application/json` — `{ "ok": true }` or `{ "error": "..." }`
+`window_id` is optional.
+
+**Response:** `200 application/json` — `{ "ok": true, "tab_id": "<tab id>" }` or `{ "ok": false, "error": "..." }`
+
+---
+
+### `POST /api/new-window`
+
+Create a new window. Takes no request body.
+
+**Response:** `200 application/json` — `{ "ok": true, "window_id": "<window id>" }` or `{ "ok": false, "error": "..." }`
+
+---
+
+### `POST /api/split-pane`
+
+Split a session into two panes.
+
+**Request body:** `application/json`
+
+```json
+{ "id": "<session id>", "vertical": true }
+```
+
+`vertical` is optional and defaults to `true` (side-by-side split); `false` stacks the new pane below.
+
+**Response:** `200 application/json` — `{ "ok": true, "session_id": "<new session id>" }` or `{ "ok": false, "error": "..." }`
 
 ---
 
@@ -185,20 +229,6 @@ Set a tab group's collapsed state in the panel. Persists across restarts the sam
 ```
 
 **Response:** `200 application/json` — `{ "ok": true }` or `{ "ok": false, "error": "..." }`
-
----
-
-### `POST /api/project`
-
-Open a named project layout from `iterm2_claude_cockpit/projects/<name>.yaml`.
-
-**Request body:** `application/json`
-
-```json
-{ "name": "<project name>" }
-```
-
-**Response:** `200 application/json` — `{ "ok": true }` or `{ "error": "..." }`
 
 ---
 

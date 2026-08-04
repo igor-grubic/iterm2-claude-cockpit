@@ -38,9 +38,11 @@ server/tree.py                                                │
     │  → returns JSON-serializable dict                       │
     ▼                                                         │
 server/http.py                                                │
-    │  GET /api/tree → returns snapshot JSON                  │
-    │  POST /api/focus|close|create|restore → delegates to    │
-    │    server/actions.py                                     │
+    │  GET /api/tree|settings → returns snapshot/settings JSON │
+    │  POST /api/focus|new-tab|new-window|split-pane|          │
+    │    close-session|move-tab|rename-tab|set-tab-color|      │
+    │    set-tab-collapsed|settings|restore →                  │
+    │    delegates to server/actions.py                        │
     ▼                                                         │
 webview/index.html + app.js                                   │
     │  polls /api/tree every ~500ms                           │
