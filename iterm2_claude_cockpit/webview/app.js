@@ -12,6 +12,10 @@
   // --clr-claude in styles.css.
   const CLAUDE_YELLOW = "#f6c177";
 
+  // The active-pane accent for uncolored groups — matches --accent in styles.css. Colored
+  // groups use their own (much stronger) color for the active-pane highlight instead.
+  const ACTIVE_FALLBACK = "#4ea1ff";
+
   // Per-theme color palette (index 0-5, cycled by clicking a swatch) plus the neutral/label/
   // title colors that go with it. Selectable in Settings; "2a" is the default.
   // Both palettes are ordered: red, green, yellow, purple, blue, brown.
@@ -52,6 +56,12 @@
   // the POST persists the change server-side in the background.
   const colorOverrides = new Map(); // tab id -> color index | null
   const collapsedOverrides = new Map(); // tab id -> bool
+
+  // Same idea for focus: clicking a pane used to just fire the POST and wait for a poll
+  // to notice — up to ~500ms of visible lag before the highlight moved. This makes the
+  // click itself the source of truth until the server confirms it.
+  let activeOverride = null; // session id, or null once the server has confirmed it
+  function isPaneActive(p) { return activeOverride !== null ? p.id === activeOverride : Boolean(p.active); }
 
   async function copyToClipboard(text) {
     try {
@@ -315,7 +325,8 @@
   function renderPaneRow2a(p, groupColorHex, dim) {
     const th = theme();
     const row = document.createElement("div");
-    row.className = "pane-row" + (p.active ? " active" : "");
+    const active = isPaneActive(p);
+    row.className = "pane-row" + (active ? " active" : "");
 
     const isClaude = isClaudePane(p);
 
@@ -325,10 +336,12 @@
     if (p.last_line) tooltipParts.push(p.last_line);
     if (tooltipParts.length) row.title = tooltipParts.join("\n");
 
+    // The active pane needs to read as clearly "selected" against its idle siblings —
+    // a much bolder fill + ring than the idle tint, same idea as the group-header fix.
     row.style.background = dim
       ? "transparent"
-      : (p.active ? rgba(groupColorHex || "#8899aa", 0.16) : (groupColorHex ? rgba(groupColorHex, 0.06) : "transparent"));
-    row.style.boxShadow = p.active && !dim ? `inset 0 0 0 1px ${rgba(groupColorHex || "#8899aa", 0.45)}` : "none";
+      : (active ? rgba(groupColorHex || ACTIVE_FALLBACK, 0.32) : (groupColorHex ? rgba(groupColorHex, 0.06) : "transparent"));
+    row.style.boxShadow = active && !dim ? `inset 0 0 0 2px ${rgba(groupColorHex || ACTIVE_FALLBACK, 0.8)}` : "none";
 
     const marker = document.createElement("span");
     marker.className = "pane-dot";
@@ -341,12 +354,12 @@
     const title = document.createElement("span");
     title.className = "pane-title";
     title.textContent = p.session_name || p.title || p.id;
-    title.style.color = dim ? th.labelDim : (isClaude ? CLAUDE_YELLOW : (p.active ? th.titleOn : th.titleDim));
+    title.style.color = dim ? th.labelDim : (isClaude ? CLAUDE_YELLOW : (active ? th.titleOn : th.titleDim));
 
     const path = document.createElement("span");
     path.className = "pane-path";
     path.textContent = p.cwd || p.title || "";
-    if (p.active && p.cwd) {
+    if (active && p.cwd) {
       path.title = "Click to copy";
       path.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -442,7 +455,8 @@
   function renderPaneRow1a(p, groupColorHex, dim) {
     const th = theme();
     const row = document.createElement("div");
-    row.className = "pane-row-classic" + (p.active ? " active" : "");
+    const active = isPaneActive(p);
+    row.className = "pane-row-classic" + (active ? " active" : "");
 
     const isClaude = isClaudePane(p);
 
@@ -452,10 +466,12 @@
     if (p.last_line) tooltipParts.push(p.last_line);
     if (tooltipParts.length) row.title = tooltipParts.join("\n");
 
+    // Same idea as the group-header fix: the active pane needs a bold fill + a full-width
+    // accent bar (matching the group spine's weight), not just a faint tint bump.
     row.style.background = dim
       ? "transparent"
-      : (p.active ? rgba(groupColorHex || "#8899aa", 0.18) : (groupColorHex ? rgba(groupColorHex, 0.06) : "transparent"));
-    row.style.borderLeft = `2px solid ${dim ? "transparent" : (p.active ? (groupColorHex || th.none) : "transparent")}`;
+      : (active ? rgba(groupColorHex || ACTIVE_FALLBACK, 0.34) : (groupColorHex ? rgba(groupColorHex, 0.06) : "transparent"));
+    row.style.borderLeft = `3px solid ${dim ? "transparent" : (active ? (groupColorHex || ACTIVE_FALLBACK) : "transparent")}`;
 
     const mark = document.createElement("span");
     mark.className = "pane-mark";
@@ -465,12 +481,12 @@
     const title = document.createElement("span");
     title.className = "pane-title-classic";
     title.textContent = p.session_name || p.title || p.id;
-    title.style.color = dim ? th.labelDim : (isClaude ? CLAUDE_YELLOW : (p.active ? th.titleOn : th.titleDim));
+    title.style.color = dim ? th.labelDim : (isClaude ? CLAUDE_YELLOW : (active ? th.titleOn : th.titleDim));
 
     const path = document.createElement("span");
     path.className = "pane-path-classic";
     path.textContent = p.cwd || p.title || "";
-    if (p.active && p.cwd) {
+    if (active && p.cwd) {
       path.title = "Click to copy";
       path.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -586,6 +602,13 @@
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") dismissPopup(); });
 
   async function focusNode(kind, id) {
+    if (kind === "session") {
+      // Optimistic: highlight the clicked pane immediately instead of waiting for the
+      // POST to round-trip through iTerm2 and then for a poll tick (up to ~500ms) to
+      // notice. Cleared once a poll confirms the server agrees, or on failure below.
+      activeOverride = id;
+      if (lastSnapshot) renderTree(lastSnapshot);
+    }
     try {
       const res = await fetch("/api/focus", {
         method: "POST",
@@ -593,13 +616,23 @@
         body: JSON.stringify({ kind, id }),
       });
       const data = await res.json();
-      if (!data.ok) toast(data.error || "focus failed", false);
+      if (!data.ok) {
+        toast(data.error || "focus failed", false);
+        activeOverride = null;
+        if (lastSnapshot) renderTree(lastSnapshot);
+        return;
+      }
     } catch (e) {
       toast("focus error: " + e, false);
+      activeOverride = null;
+      if (lastSnapshot) renderTree(lastSnapshot);
+      return;
     }
+    pollOnce(); // don't wait for the next scheduled tick to confirm/reconcile
   }
 
   function activeSessionId() {
+    if (activeOverride !== null) return activeOverride;
     for (const w of lastSnapshot?.windows || []) {
       for (const t of w.tabs || []) {
         for (const p of t.panes || []) {
@@ -835,6 +868,19 @@
     return null;
   }
 
+  // True once `snapshot` itself reports `sessionId` as active — i.e. the real focus
+  // change has landed, and the optimistic override in focusNode() can stand down.
+  function snapshotConfirmsActive(snapshot, sessionId) {
+    for (const w of snapshot.windows || []) {
+      for (const t of w.tabs || []) {
+        for (const p of t.panes || []) {
+          if (p.id === sessionId) return Boolean(p.active);
+        }
+      }
+    }
+    return false;
+  }
+
   async function pollOnce() {
     try {
       const res = await fetch("/api/tree", { cache: "no-store" });
@@ -842,6 +888,9 @@
       const data = await res.json();
       consecutiveFailures = 0;
       setStatus("live", "ok");
+      if (activeOverride !== null && snapshotConfirmsActive(data, activeOverride)) {
+        activeOverride = null;
+      }
       const json = JSON.stringify(data);
       if (json !== lastSnapshotJson) {
         lastSnapshotJson = json;

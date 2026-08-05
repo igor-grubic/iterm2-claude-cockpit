@@ -396,7 +396,7 @@ main {
   align-items: baseline;
   gap: 8px;
   padding: 6px 12px 6px 13px;
-  margin-left: -2px;
+  margin-left: -3px; /* matches the active border-left width, so it sits flush on the spine */
   cursor: pointer;
   user-select: none;
 }
