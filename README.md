@@ -13,7 +13,7 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 - Two selectable panel themes (Settings panel → Theme): **Modern**, the default, and **Classic**, a JetBrains Mono terminal-styled alternative. The choice persists across restarts
 - Per-tab group color coding: click a tab's swatch to cycle through 6 colors, which tints the tab's block and every pane in it; click a color chip in the header to filter the panel down to that color. Colors and collapsed state persist across restarts
 - Claude panes stand out at a glance with a yellow pane title — detected via the pane's TTY, so it works for the Node-based install too
-- Configurable link chips on group headers (e.g. **PR** / **JIRA**) that open a URL in your browser — see [Group link chips](#group-link-chips) below
+- Auto-discovered link chips on group headers — every URL in a workspace status file becomes a labeled chip that opens in your browser (arrays open a popup of all their links); see [Group link chips](#group-link-chips) below
 - Click any pane to focus it immediately; its close (×) button is always visible; on the active pane, click its path to copy the working directory to the clipboard. Hover a pane for a tooltip with its job, working directory, and last output line
 - Rename tabs inline (✎ button next to the name) or programmatically via `POST /api/rename-tab`; custom names persist until the tab or window is closed
 - Create new tabs and windows from the panel
@@ -113,37 +113,38 @@ What it does **not** restore: running processes (Claude sessions, dev servers, b
 
 ## Group link chips
 
-Each group header can show small link chips (a **PR** chip, a **JIRA** chip, or anything you configure) that open a URL in your browser. This is handy for jumping from a pane straight to its pull request or ticket.
+Each group header can show small link chips that open a URL in your browser — handy for jumping from a pane straight to its pull request or ticket. The daemon is deliberately agnostic to what the links mean: it doesn't hardcode "PR" or "Jira", it just turns whatever links your status file carries into chips.
 
-How it works — the daemon is deliberately agnostic to what the links mean:
+How it works:
 
 1. In the working directories of a group's panes, it looks for a **status file** (default `.cockpit.json`).
-2. It extracts a value from that file (a JSON key, or a regex capture).
-3. It builds a URL from the value and renders a chip. Clicking the chip opens the URL.
+2. Every **URL-valued property** of that file becomes a chip, **labeled with the property name**.
+3. A chip with a single URL opens it on click; a chip whose property is a **list of URLs** opens a small popup listing them all.
 
-A group with no matching status file shows no chips.
+Non-URL properties (e.g. a `branch` string) are ignored, and a group with no status file shows no chips.
 
-**The status file.** By default, drop a `.cockpit.json` at the root of a working directory (or any parent of your panes' cwds):
-
-```json
-{
-  "pr_url": "https://github.com/org/repo/pull/123",
-  "jira_url": "https://jira.example.com/browse/PROJ-456"
-}
-```
-
-**Customizing the chips.** The chips are defined by *link providers*. Without any config, a built-in default shows a `PR` chip (from `pr_url`) and a `JIRA` chip (from `jira_url`). To change which files/fields/URLs are used — or to add your own chips — create `~/.config/iterm2-claude-cockpit/links.json`:
+**The status file.** Drop a `.cockpit.json` in a pane's working directory:
 
 ```json
 {
-  "providers": [
-    { "id": "pr",   "label": "PR",   "color": "#8ab4f8", "file": ".cockpit.json", "extract": { "json": "pr_url" },   "href": "{value}" },
-    { "id": "jira", "label": "JIRA", "color": "#d8a0e6", "file": ".cockpit.json", "extract": { "json": "jira_key" }, "href": "https://jira.example.com/browse/{value}" }
-  ]
+  "jira_url": "https://jira.example.com/browse/PROJ-456",
+  "pr_urls": [
+    "https://github.com/org/frontend/pull/12",
+    "https://github.com/org/backend/pull/34"
+  ],
+  "branch": "PROJ-456-do-the-thing"
 }
 ```
 
-`extract` can be `{ "json": "a.b.c" }` (a dotted key path) or `{ "regex": "..." }` (capture group 1, so it can read a value straight out of a Markdown or text file). `{value}` in `href` is replaced with the extracted value. Edits to `links.json` take effect on the next refresh — no restart needed. See `specs/http-api.md` for the full provider reference.
+This renders a **`jira_url`** chip (opens the ticket) and a **`pr_urls`** chip (opens a popup of both PRs). `branch` is ignored. The chip label is exactly the property name, so name your properties how you want them to read.
+
+**Configuration.** The only setting is *which file* to read. To use a different filename, create `~/.config/iterm2-claude-cockpit/links.json`:
+
+```json
+{ "file": ".cockpit.json" }
+```
+
+Edits take effect on the next refresh — no restart needed. See `specs/http-api.md` for the full reference.
 
 ## Troubleshooting
 

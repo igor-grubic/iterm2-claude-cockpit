@@ -216,39 +216,33 @@ Only `http`/`https` URLs are accepted; anything else returns `{ "ok": false, "er
 
 **Response:** `200 application/json` — `{ "ok": true }` or `{ "ok": false, "error": "..." }`
 
-#### Link providers (config)
+#### Where the chips come from (status file)
 
-The chips in `tab.links[]` are produced by **link providers** read from `~/.config/iterm2-claude-cockpit/links.json`. When that file is absent or malformed, a built-in default is used (a `PR` and a `JIRA` chip, both reading full URLs from a `.cockpit.json` status file). The config is cached by its mtime, so edits take effect on the next tree build without a daemon restart.
+The chips in `tab.links[]` are **auto-discovered** from a status file (default `.cockpit.json`) read from a group's panes' working directories. Every **URL-valued property** of that JSON object becomes a chip, labeled with the property name:
+
+- a property whose value is an `http(s)` URL string → a chip that opens that URL;
+- a property whose value is a list of URLs → a chip that opens a popup listing them all (the panel opens it directly when the list has just one);
+- any other property (e.g. a plain `branch` string) is ignored.
 
 ```json
 {
-  "providers": [
-    {
-      "id": "pr", "label": "PR", "color": "#8ab4f8",
-      "file": ".cockpit.json",
-      "extract": { "json": "pr_url" },
-      "href": "{value}"
-    },
-    {
-      "id": "jira", "label": "JIRA", "color": "#d8a0e6",
-      "file": ".cockpit.json",
-      "extract": { "json": "jira_url" },
-      "href": "{value}"
-    }
-  ]
+  "jira_url": "https://jira.example.com/browse/PROJ-1",
+  "pr_urls": ["https://github.com/org/a/pull/1", "https://github.com/org/b/pull/2"],
+  "branch": "PROJ-1-do-the-thing"
 }
 ```
 
-| Provider field | Type | Description |
-|----------------|------|-------------|
-| `id` | string | Stable key surfaced as `link.id` (required) |
-| `label` | string | Chip text (defaults to `id`) |
-| `color` | string | Chip color (hex); optional |
-| `file` | string | Status file read from a pane's working directory (required) |
-| `extract` | object | How to pull the value out of the file (required): `{ "json": "a.b.c" }` (dotted key path) or `{ "regex": "..." }` (capture group 1) |
-| `href` | string | URL template; `{value}` is replaced with the extracted value (defaults to `{value}`) |
+→ a `jira_url` chip (opens the ticket) and a `pr_urls` chip (popup of both PRs); `branch` is ignored.
 
-The daemon is agnostic to what the values mean — it only finds a file, extracts a string, and builds a URL. A provider whose file isn't found (or whose value is missing) produces no chip.
+The daemon is agnostic to what the properties mean — it just turns URL-valued keys into chips, in file order, with a color derived deterministically from each key.
+
+The only configurable knob is **which file** to read, via `~/.config/iterm2-claude-cockpit/links.json`:
+
+```json
+{ "file": ".cockpit.json" }
+```
+
+An absent or malformed config falls back to `.cockpit.json`. The config (and the status files) are cached by mtime, so edits take effect on the next tree build without a daemon restart.
 
 ---
 

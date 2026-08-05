@@ -35,7 +35,7 @@ See `specs/architecture.md` for the full picture. Quick map:
 |--------|------|
 | `iterm2_claude_cockpit.py` | Daemon entry point; registers iTerm2 update hooks |
 | `server/tree.py` | Builds the JSON snapshot (window → tab → pane) |
-| `server/links.py` | Resolves config-driven group link chips (PR/Jira/…) from a per-workspace status file |
+| `server/links.py` | Auto-discovers group link chips from a per-workspace status file (URL-valued properties → chips) |
 | `server/http.py` | Serves the panel HTML and `/api/*` routes |
 | `server/actions.py` | Handles user actions: focus, create, close, restore, open-url |
 | `server/persistence.py` | Saves/loads the workspace layout for session restore |

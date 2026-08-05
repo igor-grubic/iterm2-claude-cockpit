@@ -1,34 +1,37 @@
-"""Config-driven per-workspace link buttons (PR, Jira, …).
+"""Per-workspace link chips, auto-discovered from a status file.
 
-A *link provider* turns a pane's working directory into a button: it names a
-status file to read from that directory, a value to pull out of that
-file, and a URL template to build from the value. The cockpit itself knows
-nothing about GitHub or Jira — providers are plain data loaded from
-`~/.config/iterm2-claude-cockpit/links.json`, with a sensible built-in default
-when that file is absent.
+The cockpit reads a small status file (default `.cockpit.json`) from a group's
+panes' working directories and turns each **URL-valued property** into a chip:
+the property name is the label, and its value(s) are what the chip opens. The
+cockpit hardcodes nothing about GitHub or Jira — whatever URL properties the file
+carries become chips, in file order.
 
-A provider is a dict::
+- A property whose value is a URL string → a chip that opens that URL.
+- A property whose value is a list of URLs → a chip that opens a popup of them all
+  (the webview opens directly when there's just one).
+- Non-URL properties (e.g. a plain `branch` string) are ignored.
+
+Example `.cockpit.json`::
 
     {
-      "id": "pr",                       # stable key, used by the webview
-      "label": "PR",                    # chip text
-      "color": "#8ab4f8",               # optional chip color (hex)
-      "file": ".cockpit.json",          # looked for in a pane's working directory
-      "extract": {"json": "pr_url"},    # or {"regex": "- PR:\\s*(\\S+)"}
-      "href": "{value}"                 # {value} is replaced with the extracted value
+      "jira_url": "https://jira.example.com/browse/PROJ-1",
+      "pr_urls": ["https://github.com/org/a/pull/1", "https://github.com/org/b/pull/2"],
+      "branch": "PROJ-1-do-the-thing"          # ignored: not a URL
     }
 
-The value-extraction and URL-building helpers are pure (no filesystem, no
-`iterm2`), so they are unit-testable in CI. Only `resolve_tab_links` and
-`load_providers` touch disk; file contents and the parsed config are cached by
-mtime so repeated tree builds don't re-read unchanged files.
+→ a `jira_url` chip (opens the ticket) and a `pr_urls` chip (popup of both PRs).
+
+The only configurable knob is *which file* to read, via
+`~/.config/iterm2-claude-cockpit/links.json` → `{"file": "..."}`. The
+text-parsing helpers are pure (no filesystem, no `iterm2`), so they're
+unit-testable in CI; file contents and the config are cached by mtime.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-import re
 from pathlib import Path
 from typing import Any
 
@@ -39,74 +42,49 @@ log = logging.getLogger("iterm2_claude_cockpit.links")
 # Lives alongside the other daemon config (state.json, settings.json, …).
 LINKS_PATH = persistence.STATE_DIR / "links.json"
 
-# Shipped default: two chips reading full URLs from a `.cockpit.json` in the pane's
-# working directory. Full URLs (not ids) keep this default free of any org-specific
-# domain — the `href` template and `regex` extractor are there for custom configs.
-DEFAULT_PROVIDERS: list[dict[str, Any]] = [
-    {
-        "id": "pr",
-        "label": "PR",
-        "color": "#8ab4f8",
-        "file": ".cockpit.json",
-        "extract": {"json": "pr_url"},
-        "href": "{value}",
-    },
-    {
-        "id": "jira",
-        "label": "JIRA",
-        "color": "#d8a0e6",
-        "file": ".cockpit.json",
-        "extract": {"json": "jira_url"},
-        "href": "{value}",
-    },
-]
+# The status file read from each pane's working directory, unless overridden.
+DEFAULT_STATUS_FILE = ".cockpit.json"
+
+# Stable per-property chip colors: a property name always maps to the same hue, so
+# e.g. a `pr_url` chip looks the same across every group. Chosen to read well on the
+# dark panel; the webview applies them as the chip's text/border/fill.
+_CHIP_PALETTE = ["#8ab4f8", "#d8a0e6", "#7dd3a8", "#e8c26a", "#e2685f", "#b58a63"]
 
 # path str -> (mtime, text); invalidated on mtime change (e.g. /pr rewrites the file).
 _FILE_CACHE: dict[str, tuple[float, str]] = {}
-# (config mtime | None, providers); None mtime means the file was absent.
-_PROVIDERS_CACHE: tuple[float | None, list[dict[str, Any]]] | None = None
+# (config mtime | None, filename); None mtime means the config file was absent.
+_CONFIG_CACHE: tuple[float | None, str] | None = None
 
 
-def _valid_provider(provider: Any) -> bool:
-    """A provider must at least name an id, a file to read, and how to extract."""
-    return (
-        isinstance(provider, dict)
-        and bool(provider.get("id"))
-        and bool(provider.get("file"))
-        and isinstance(provider.get("extract"), dict)
-    )
+def status_filename(path: str | Path | None = None) -> str:
+    """Return the status-file name to read, from config or the built-in default.
 
-
-def load_providers(path: str | Path | None = None) -> list[dict[str, Any]]:
-    """Return the configured link providers, or the built-in defaults.
-
-    Cached by the config file's mtime so an edit to `links.json` takes effect on
-    the next tree build without a daemon restart, and an unchanged file is parsed
-    only once. A missing or malformed file falls back to `DEFAULT_PROVIDERS`.
+    Reads `{"file": "..."}` from `links.json` when present; otherwise
+    `DEFAULT_STATUS_FILE`. Cached by the config file's mtime so an edit takes effect
+    on the next tree build without a restart, and an unchanged file is parsed once.
     """
-    global _PROVIDERS_CACHE
+    global _CONFIG_CACHE
     p = Path(path) if path is not None else LINKS_PATH
     try:
         mtime: float | None = p.stat().st_mtime
     except OSError:
-        mtime = None  # file absent → use defaults
+        mtime = None  # config absent → default
 
-    if _PROVIDERS_CACHE is not None and _PROVIDERS_CACHE[0] == mtime:
-        return _PROVIDERS_CACHE[1]
+    if _CONFIG_CACHE is not None and _CONFIG_CACHE[0] == mtime:
+        return _CONFIG_CACHE[1]
 
-    providers = DEFAULT_PROVIDERS
+    filename = DEFAULT_STATUS_FILE
     if mtime is not None:
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
-            raw = data.get("providers") if isinstance(data, dict) else None
-            if isinstance(raw, list):
-                providers = [pr for pr in raw if _valid_provider(pr)]
+            if isinstance(data, dict) and isinstance(data.get("file"), str) and data["file"].strip():
+                filename = data["file"].strip()
         except Exception:
-            log.exception("failed to read links config %s; using defaults", p)
-            providers = DEFAULT_PROVIDERS
+            log.exception("failed to read links config %s; using default status file", p)
+            filename = DEFAULT_STATUS_FILE
 
-    _PROVIDERS_CACHE = (mtime, providers)
-    return providers
+    _CONFIG_CACHE = (mtime, filename)
+    return filename
 
 
 def find_status_file(start: str, filename: str) -> Path | None:
@@ -128,68 +106,47 @@ def find_status_file(start: str, filename: str) -> Path | None:
         return None
 
 
-def _dig(data: Any, dotted: str) -> Any:
-    """Follow a dotted key path (`a.b.c`) through nested dicts, or None if absent."""
-    cur = data
-    for part in dotted.split("."):
-        if isinstance(cur, dict) and part in cur:
-            cur = cur[part]
-        else:
-            return None
-    return cur
+def _is_url(value: Any) -> bool:
+    """True when `value` is an http(s) URL string (what a chip can open)."""
+    return isinstance(value, str) and value.strip().lower().startswith(("http://", "https://"))
 
 
-def extract_value(text: str, extract: dict[str, Any]) -> str | None:
-    """Pull a single string value out of `text` per an `extract` spec.
+def _urls_of(value: Any) -> list[str]:
+    """The URL(s) carried by a property value: a URL string → one; a list → its URLs."""
+    if _is_url(value):
+        return [value.strip()]
+    if isinstance(value, list):
+        return [v.strip() for v in value if _is_url(v)]
+    return []
 
-    `{"json": "a.b"}` parses `text` as JSON and follows the dotted key path.
-    `{"regex": "..."}` searches `text` and returns capture group 1. Returns None
-    when the value is missing, empty, or the file/pattern can't be parsed.
+
+def _color_for(name: str) -> str:
+    """Deterministic chip color for a property name (stable across runs/groups)."""
+    digest = hashlib.sha1(name.encode("utf-8")).hexdigest()
+    return _CHIP_PALETTE[int(digest, 16) % len(_CHIP_PALETTE)]
+
+
+def links_from_text(text: str) -> list[dict[str, Any]]:
+    """Turn a status file's text into link chips, one per URL-valued property.
+
+    Pure (no filesystem). Each chip is `{"id","label","urls","color"}`, in the
+    file's property order. `urls` always has at least one entry. Non-URL properties
+    are skipped; malformed or non-object JSON yields no chips.
     """
-    if not isinstance(extract, dict):
-        return None
-    if "json" in extract:
-        try:
-            data = json.loads(text)
-        except Exception:
-            return None
-        value = _dig(data, str(extract["json"]))
-        if isinstance(value, str):
-            return value.strip() or None
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return str(value)
-        return None
-    if "regex" in extract:
-        try:
-            match = re.search(str(extract["regex"]), text)
-        except re.error:
-            log.warning("invalid link-provider regex: %r", extract["regex"])
-            return None
-        if match and match.groups():
-            return (match.group(1) or "").strip() or None
-    return None
-
-
-def build_href(template: str, value: str) -> str:
-    """Substitute `{value}` in a provider's href template with the extracted value."""
-    return (template or "{value}").replace("{value}", value)
-
-
-def link_from_text(provider: dict[str, Any], text: str) -> dict[str, Any] | None:
-    """Build one link dict from a provider and the text of its status file.
-
-    Pure (no filesystem): returns `{"id","label","href","color"}` or None when the
-    provider's value isn't present in `text`.
-    """
-    value = extract_value(text, provider.get("extract") or {})
-    if not value:
-        return None
-    return {
-        "id": str(provider.get("id", "")),
-        "label": str(provider.get("label", provider.get("id", ""))),
-        "href": build_href(str(provider.get("href", "{value}")), value),
-        "color": provider.get("color"),
-    }
+    try:
+        data = json.loads(text)
+    except Exception:
+        return []
+    if not isinstance(data, dict):
+        return []
+    out: list[dict[str, Any]] = []
+    for key, value in data.items():
+        urls = _urls_of(value)
+        if not urls:
+            continue
+        name = str(key)
+        out.append({"id": name, "label": name, "urls": urls, "color": _color_for(name)})
+    return out
 
 
 def _read_cached(path: Path) -> str | None:
@@ -211,27 +168,21 @@ def _read_cached(path: Path) -> str | None:
     return text
 
 
-def resolve_tab_links(cwds: list[str], providers: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Resolve the link chips for a tab, given its panes' working directories.
+def resolve_tab_links(cwds: list[str], filename: str) -> list[dict[str, Any]]:
+    """Resolve a tab's link chips from its panes' working directories.
 
-    For each provider, the first cwd whose status file yields the provider's value
-    wins — so a workspace shared by several panes produces one chip, not one per
-    pane. Providers with no match are simply omitted.
+    The first cwd that has the status file (and yields at least one chip) wins — so a
+    workspace shared by several panes produces one chip set, not one per pane. Returns
+    an empty list when no pane's folder holds a usable status file.
     """
-    out: list[dict[str, Any]] = []
-    for provider in providers:
-        filename = str(provider.get("file") or "")
-        if not filename:
+    for cwd in cwds:
+        path = find_status_file(cwd, filename)
+        if path is None:
             continue
-        for cwd in cwds:
-            path = find_status_file(cwd, filename)
-            if path is None:
-                continue
-            text = _read_cached(path)
-            if text is None:
-                continue
-            link = link_from_text(provider, text)
-            if link is not None:
-                out.append(link)
-                break
-    return out
+        text = _read_cached(path)
+        if text is None:
+            continue
+        links = links_from_text(text)
+        if links:
+            return links
+    return []
