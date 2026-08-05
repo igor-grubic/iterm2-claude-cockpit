@@ -1,7 +1,7 @@
 """Config-driven per-workspace link buttons (PR, Jira, …).
 
 A *link provider* turns a pane's working directory into a button: it names a
-status file to find by walking up from the cwd, a value to pull out of that
+status file to read from that directory, a value to pull out of that
 file, and a URL template to build from the value. The cockpit itself knows
 nothing about GitHub or Jira — providers are plain data loaded from
 `~/.config/iterm2-claude-cockpit/links.json`, with a sensible built-in default
@@ -13,7 +13,7 @@ A provider is a dict::
       "id": "pr",                       # stable key, used by the webview
       "label": "PR",                    # chip text
       "color": "#8ab4f8",               # optional chip color (hex)
-      "file": ".cockpit.json",          # found by walking up from a pane cwd
+      "file": ".cockpit.json",          # looked for in a pane's working directory
       "extract": {"json": "pr_url"},    # or {"regex": "- PR:\\s*(\\S+)"}
       "href": "{value}"                 # {value} is replaced with the extracted value
     }
@@ -39,11 +39,8 @@ log = logging.getLogger("iterm2_claude_cockpit.links")
 # Lives alongside the other daemon config (state.json, settings.json, …).
 LINKS_PATH = persistence.STATE_DIR / "links.json"
 
-# How far up from a pane's cwd we look for a status file before giving up.
-_MAX_WALK_DEPTH = 40
-
-# Shipped default: two chips reading full URLs from a `.cockpit.json` at (or above)
-# the pane's cwd. Full URLs (not ids) keep this default free of any org-specific
+# Shipped default: two chips reading full URLs from a `.cockpit.json` in the pane's
+# working directory. Full URLs (not ids) keep this default free of any org-specific
 # domain — the `href` template and `regex` extractor are there for custom configs.
 DEFAULT_PROVIDERS: list[dict[str, Any]] = [
     {
@@ -112,29 +109,23 @@ def load_providers(path: str | Path | None = None) -> list[dict[str, Any]]:
     return providers
 
 
-def find_status_file(start: str, filename: str, max_depth: int = _MAX_WALK_DEPTH) -> Path | None:
-    """Walk up from `start` looking for `filename`; return the nearest match or None.
+def find_status_file(start: str, filename: str) -> Path | None:
+    """Return `<start>/<filename>` if it exists, else None.
 
-    Walking up means a pane that has `cd`-ed into a repo subfolder still finds the
-    status file at its workspace root.
+    The lookup is scoped to the pane's own working directory — it does not walk up
+    into ancestor directories — so a status file only affects panes actually sitting
+    in its folder, never unrelated panes elsewhere on the tree.
     """
     if not start or not filename:
         return None
     try:
-        cur = Path(start).resolve()
+        candidate = Path(start).resolve() / filename
     except Exception:
         return None
-    for _ in range(max_depth):
-        candidate = cur / filename
-        try:
-            if candidate.is_file():
-                return candidate
-        except OSError:
-            pass
-        if cur.parent == cur:  # reached the filesystem root
-            break
-        cur = cur.parent
-    return None
+    try:
+        return candidate if candidate.is_file() else None
+    except OSError:
+        return None
 
 
 def _dig(data: Any, dotted: str) -> Any:

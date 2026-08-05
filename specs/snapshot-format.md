@@ -58,7 +58,7 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
 
 ### Link node (`tab.links[]`)
 
-A clickable chip the panel renders on the group header — e.g. a PR or Jira link. Chips are produced by **link providers** (a config file, or a built-in default) that resolve a value out of a *status file* found by walking up from a pane's working directory. See `specs/http-api.md` → `POST /api/open-url` and the README for the provider format and the default `.cockpit.json` status file.
+A clickable chip the panel renders on the group header — e.g. a PR or Jira link. Chips are produced by **link providers** (a config file, or a built-in default) that resolve a value out of a *status file* read from a pane's working directory. See `specs/http-api.md` → `POST /api/open-url` and the README for the provider format and the default `.cockpit.json` status file.
 
 ```json
 { "id": "pr", "label": "PR", "href": "https://github.com/org/repo/pull/12", "color": "#8ab4f8" }

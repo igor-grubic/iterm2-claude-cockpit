@@ -244,7 +244,7 @@ The chips in `tab.links[]` are produced by **link providers** read from `~/.conf
 | `id` | string | Stable key surfaced as `link.id` (required) |
 | `label` | string | Chip text (defaults to `id`) |
 | `color` | string | Chip color (hex); optional |
-| `file` | string | Status file to find by walking up from a pane's cwd (required) |
+| `file` | string | Status file read from a pane's working directory (required) |
 | `extract` | object | How to pull the value out of the file (required): `{ "json": "a.b.c" }` (dotted key path) or `{ "regex": "..." }` (capture group 1) |
 | `href` | string | URL template; `{value}` is replaced with the extracted value (defaults to `{value}`) |
 

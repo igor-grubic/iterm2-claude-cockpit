@@ -117,7 +117,7 @@ Each group header can show small link chips (a **PR** chip, a **JIRA** chip, or 
 
 How it works — the daemon is deliberately agnostic to what the links mean:
 
-1. Starting from the working directories of a group's panes, it walks up the directory tree looking for a **status file** (default `.cockpit.json`).
+1. In the working directories of a group's panes, it looks for a **status file** (default `.cockpit.json`).
 2. It extracts a value from that file (a JSON key, or a regex capture).
 3. It builds a URL from the value and renders a chip. Clicking the chip opens the URL.
 

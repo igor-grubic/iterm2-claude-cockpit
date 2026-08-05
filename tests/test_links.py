@@ -83,14 +83,21 @@ class LinkFromTextTest(unittest.TestCase):
 
 
 class FindStatusFileTest(unittest.TestCase):
-    def test_walks_up_to_workspace_root(self) -> None:
+    def test_found_in_own_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".cockpit.json").write_text("{}", encoding="utf-8")
+            self.assertEqual(links.find_status_file(str(root), ".cockpit.json"), (root / ".cockpit.json").resolve())
+
+    def test_does_not_walk_up_into_ancestors(self) -> None:
+        # A file in an ancestor must NOT be picked up from a subfolder — the lookup is
+        # scoped to the pane's own folder, so unrelated panes never inherit a distant file.
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             (root / ".cockpit.json").write_text("{}", encoding="utf-8")
             deep = root / "repo" / "src" / "pkg"
             deep.mkdir(parents=True)
-            found = links.find_status_file(str(deep), ".cockpit.json")
-            self.assertEqual(found, (root / ".cockpit.json").resolve())
+            self.assertIsNone(links.find_status_file(str(deep), ".cockpit.json"))
 
     def test_not_found_returns_none(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -124,10 +131,22 @@ class ResolveTabLinksTest(unittest.TestCase):
             )
             sub = root / "repo"
             sub.mkdir()
-            # Two panes in the same workspace (root + a subfolder) → still one chip each.
+            # Group has a pane at the workspace root (where the file is) and one in a
+            # subfolder; the root pane lights the chips (the subfolder pane alone would not),
+            # and the shared file yields one chip per provider — not one per pane.
             out = links.resolve_tab_links([str(root), str(sub)], providers)
             self.assertEqual([link["id"] for link in out], ["pr", "jira"])
             self.assertEqual(out[0]["href"], "https://gh/pr/1")
+
+    def test_subfolder_only_pane_yields_no_chips(self) -> None:
+        # If a group's only pane sits below the status file, no chips (no walk-up).
+        providers = [{"id": "pr", "file": ".cockpit.json", "extract": {"json": "pr_url"}, "href": "{value}"}]
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".cockpit.json").write_text(json.dumps({"pr_url": "https://gh/pr/1"}), encoding="utf-8")
+            sub = root / "repo"
+            sub.mkdir()
+            self.assertEqual(links.resolve_tab_links([str(sub)], providers), [])
 
     def test_absent_value_omits_that_chip(self) -> None:
         providers = [
