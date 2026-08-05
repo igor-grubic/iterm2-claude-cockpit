@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Configurable link chips on group headers (e.g. **PR** / **JIRA**): the daemon finds a status file (default `.cockpit.json`) by walking up from a group's panes' working directories, extracts a URL from it, and shows a chip that opens it in your browser (`POST /api/open-url`). Providers are plain data in `~/.config/iterm2-claude-cockpit/links.json` — each says which file to read, how to extract a value (JSON key path or regex), and a URL template — so the panel is agnostic to what the links mean; a sensible PR+Jira default applies when no config is present. Groups with no matching status file show no chips.
 - Two selectable panel themes, chosen from the Settings panel: **Modern** (the redesigned default look below) and **Classic** — a JetBrains Mono, terminal-styled alternative with flat accent-bar groups and a text-glyph status mark instead of a colored dot. The choice persists across restarts (`GET`/`POST /api/settings`).
 - Per-tab group color coding: click a tab's swatch to cycle through 6 colors (red, green, yellow, purple, blue, brown), tinting the tab's block and every pane in it. Click a color chip in the window header to filter the panel down to that color (other groups dim but stay visible). Set programmatically via `POST /api/set-tab-color`; colors persist across restarts.
 - Tab groups can be collapsed to just their header via `POST /api/set-tab-collapsed`; collapsed state persists across restarts.

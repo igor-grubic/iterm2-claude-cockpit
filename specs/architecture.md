@@ -41,7 +41,7 @@ server/http.py                                                │
     │  GET /api/tree|settings → returns snapshot/settings JSON │
     │  POST /api/focus|new-tab|new-window|split-pane|          │
     │    close-session|move-tab|rename-tab|set-tab-color|      │
-    │    set-tab-collapsed|settings|restore →                  │
+    │    set-tab-collapsed|open-url|settings|restore →         │
     │    delegates to server/actions.py                        │
     ▼                                                         │
 webview/index.html + app.js                                   │
@@ -56,7 +56,10 @@ webview/index.html + app.js                                   │
 Entry point. Connects to iTerm2, starts the HTTP server, registers `async_monitor` hooks for window/tab/session changes.
 
 ### `server/tree.py`
-Builds the snapshot. Reads iTerm2 state (windows, tabs, sessions), calls `_session_status` to get job and the last visible line, and returns a pure dict with no iTerm2 objects.
+Builds the snapshot. Reads iTerm2 state (windows, tabs, sessions), calls `_session_status` to get job and the last visible line, resolves each group's link chips via `server/links.py`, and returns a pure dict with no iTerm2 objects.
+
+### `server/links.py`
+Config-driven group link chips (PR, Jira, …). For each tab, walks up from its panes' working directories to find a *status file* (default `.cockpit.json`), extracts a value (JSON key path or regex), and builds a URL — producing the `tab.links[]` entries. Providers are loaded from `~/.config/iterm2-claude-cockpit/links.json` (or a built-in default), and both the config and the status files are cached by mtime. The value-extraction/URL-building helpers are pure and `iterm2`-free, so they're unit-tested in CI (see `tests/test_links.py`). Chips open via `POST /api/open-url` (`server/actions.py:open_url`, which shells out to macOS `open`, http/https only).
 
 ### `server/http.py`
 Minimal HTTP server (no framework). Routes:

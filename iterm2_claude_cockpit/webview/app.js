@@ -250,6 +250,50 @@
     });
   }
 
+  // Open a link chip's URL in the default browser. The panel is a WKWebView inside
+  // iTerm2's toolbelt, where window.open on an external URL is unreliable — so route
+  // through the daemon, which shells out to macOS `open` (http/https only).
+  async function openLink(url) {
+    try {
+      const res = await fetch("/api/open-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!data.ok) toast(data.error || "open failed", false);
+    } catch (e) {
+      toast("open error: " + e, false);
+    }
+  }
+
+  // Config-driven chips (PR, Jira, …) attached to a group by the daemon (t.links). Each
+  // opens its URL; clicks don't bubble to the header (which toggles collapse / drags).
+  function renderLinkChips(t) {
+    const wrap = document.createElement("span");
+    wrap.className = "link-chips";
+    for (const link of t.links || []) {
+      const chip = document.createElement("a");
+      chip.className = "link-chip";
+      chip.textContent = link.label || link.id;
+      chip.href = link.href;
+      chip.title = link.href;
+      chip.draggable = false;
+      if (link.color) {
+        chip.style.color = link.color;
+        chip.style.borderColor = rgba(link.color, 0.5);
+        chip.style.background = rgba(link.color, 0.12);
+      }
+      chip.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openLink(link.href);
+      });
+      wrap.appendChild(chip);
+    }
+    return wrap;
+  }
+
   function renderGroup2a(t) {
     const th = theme();
     const wrap = document.createElement("div");
@@ -301,7 +345,9 @@
     editBtn.title = "Rename tab";
     editBtn.addEventListener("click", (ev) => { ev.stopPropagation(); startGroupEdit(header, t); });
 
-    header.append(name, count, caret, editBtn, swatch);
+    header.append(name);
+    if ((t.links || []).length) header.append(renderLinkChips(t));
+    header.append(count, caret, editBtn, swatch);
     wrap.appendChild(header);
 
     if (!effectiveCollapsed) {
@@ -428,7 +474,9 @@
     editBtn.title = "Rename tab";
     editBtn.addEventListener("click", (ev) => { ev.stopPropagation(); startGroupEdit(header, t); });
 
-    header.append(caret, name, editBtn, swatch);
+    header.append(caret, name);
+    if ((t.links || []).length) header.append(renderLinkChips(t));
+    header.append(editBtn, swatch);
     wrap.appendChild(header);
 
     if (!effectiveCollapsed) {

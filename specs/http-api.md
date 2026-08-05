@@ -202,6 +202,56 @@ Set a custom display name for a tab. The name persists in the daemon's memory un
 
 ---
 
+### `POST /api/open-url`
+
+Open a URL in the user's default browser (macOS `open`). Used by the group-header link chips (`tab.links[]`), since the panel runs in a WKWebView where `window.open` on an external URL is unreliable.
+
+**Request body:** `application/json`
+
+```json
+{ "url": "https://github.com/org/repo/pull/12" }
+```
+
+Only `http`/`https` URLs are accepted; anything else returns `{ "ok": false, "error": "only http(s) urls are allowed" }` without launching anything.
+
+**Response:** `200 application/json` — `{ "ok": true }` or `{ "ok": false, "error": "..." }`
+
+#### Link providers (config)
+
+The chips in `tab.links[]` are produced by **link providers** read from `~/.config/iterm2-claude-cockpit/links.json`. When that file is absent or malformed, a built-in default is used (a `PR` and a `JIRA` chip, both reading full URLs from a `.cockpit.json` status file). The config is cached by its mtime, so edits take effect on the next tree build without a daemon restart.
+
+```json
+{
+  "providers": [
+    {
+      "id": "pr", "label": "PR", "color": "#8ab4f8",
+      "file": ".cockpit.json",
+      "extract": { "json": "pr_url" },
+      "href": "{value}"
+    },
+    {
+      "id": "jira", "label": "JIRA", "color": "#d8a0e6",
+      "file": ".cockpit.json",
+      "extract": { "json": "jira_url" },
+      "href": "{value}"
+    }
+  ]
+}
+```
+
+| Provider field | Type | Description |
+|----------------|------|-------------|
+| `id` | string | Stable key surfaced as `link.id` (required) |
+| `label` | string | Chip text (defaults to `id`) |
+| `color` | string | Chip color (hex); optional |
+| `file` | string | Status file to find by walking up from a pane's cwd (required) |
+| `extract` | object | How to pull the value out of the file (required): `{ "json": "a.b.c" }` (dotted key path) or `{ "regex": "..." }` (capture group 1) |
+| `href` | string | URL template; `{value}` is replaced with the extracted value (defaults to `{value}`) |
+
+The daemon is agnostic to what the values mean — it only finds a file, extracts a string, and builds a URL. A provider whose file isn't found (or whose value is missing) produces no chip.
+
+---
+
 ### `POST /api/set-tab-color`
 
 Set or clear a tab's group color. Persists across restarts the same way `tab_names` does.

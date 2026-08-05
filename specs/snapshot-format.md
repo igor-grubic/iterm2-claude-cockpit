@@ -40,7 +40,8 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
   "active": false,
   "panes": [ <session>, ... ],
   "color": 2,
-  "collapsed": false
+  "collapsed": false,
+  "links": [ { "id": "pr", "label": "PR", "href": "https://github.com/org/repo/pull/12", "color": "#8ab4f8" } ]
 }
 ```
 
@@ -53,6 +54,24 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
 | `panes` | array | Ordered list of session nodes |
 | `color` | int \| null | Group color index (0-5) set via `POST /api/set-tab-color`, or `null` if uncolored |
 | `collapsed` | boolean | Whether the group's panes are collapsed in the panel, set via `POST /api/set-tab-collapsed` |
+| `links` | array | Config-driven link chips for this group (see below). Always present, may be empty (`[]`) |
+
+### Link node (`tab.links[]`)
+
+A clickable chip the panel renders on the group header — e.g. a PR or Jira link. Chips are produced by **link providers** (a config file, or a built-in default) that resolve a value out of a *status file* found by walking up from a pane's working directory. See `specs/http-api.md` → `POST /api/open-url` and the README for the provider format and the default `.cockpit.json` status file.
+
+```json
+{ "id": "pr", "label": "PR", "href": "https://github.com/org/repo/pull/12", "color": "#8ab4f8" }
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Provider id (stable key, e.g. `"pr"`, `"jira"`) |
+| `label` | string | Chip text |
+| `href` | string | URL the chip opens (via `POST /api/open-url`) |
+| `color` | string \| null | Chip color (hex), or `null` to use the panel default |
+
+The links are resolved per group from the working directories of its panes: for each provider, the first pane cwd whose status file yields the provider's value wins, so a workspace shared by several panes produces one chip set rather than one per pane. A group with no matching status file has `links: []`.
 
 ## Session node (pane)
 
@@ -90,5 +109,6 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
 - `windows` is always present, may be empty (`[]`)
 - `tabs` within a window is always present, may be empty
 - `panes` within a tab always contains at least one session (the tab's visible sessions)
+- `links` within a tab is always present, may be empty (`[]`)
 - `active` is mutually exclusive within a level: at most one window, one tab per window, and one session per tab is `active: true`
 - `id` values are stable for the lifetime of the session; they are reused by iTerm2 only after a restart

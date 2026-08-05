@@ -8,7 +8,7 @@ from pathlib import Path
 
 import iterm2
 
-from . import claude_detect
+from . import claude_detect, links
 
 log = logging.getLogger("iterm2_claude_cockpit.tree")
 
@@ -96,6 +96,7 @@ async def _tab_node(
     claude_ttys: set[str] | None = None,
     tab_colors: dict[str, int] | None = None,
     tab_collapsed: dict[str, bool] | None = None,
+    providers: list[dict] | None = None,
 ) -> dict:
     panes: list[dict] = []
     for session in tab.sessions:
@@ -103,6 +104,10 @@ async def _tab_node(
 
     tab_id = str(tab.tab_id)
     title = (tab_names or {}).get(tab_id) or f"Tab {tab_idx + 1}"
+
+    # Config-driven PR/Jira/… chips, derived from the panes' cwds (small, mtime-cached
+    # file reads — see links.py). A workspace shared by several panes yields one chip set.
+    tab_links = links.resolve_tab_links([p.get("cwd", "") for p in panes], providers or [])
 
     return {
         "kind": "tab",
@@ -112,6 +117,7 @@ async def _tab_node(
         "panes": panes,
         "color": (tab_colors or {}).get(tab_id),
         "collapsed": bool((tab_collapsed or {}).get(tab_id, False)),
+        "links": tab_links,
     }
 
 
@@ -136,6 +142,9 @@ async def build_tree(
     loop = asyncio.get_running_loop()
     claude_ttys = await loop.run_in_executor(None, claude_detect.claude_ttys)
 
+    # Loaded once per build; cached by the config file's mtime inside links.py.
+    providers = links.load_providers()
+
     windows: list[dict] = []
     for win_idx, window in enumerate(app.terminal_windows):
         tabs: list[dict] = []
@@ -150,6 +159,7 @@ async def build_tree(
                     claude_ttys,
                     tab_colors,
                     tab_collapsed,
+                    providers,
                 )
             )
 
