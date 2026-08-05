@@ -260,6 +260,97 @@
     });
   }
 
+  // Open a link chip's URL in the default browser. The panel is a WKWebView inside
+  // iTerm2's toolbelt, where window.open on an external URL is unreliable — so route
+  // through the daemon, which shells out to macOS `open` (http/https only).
+  async function openLink(url) {
+    try {
+      const res = await fetch("/api/open-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!data.ok) toast(data.error || "open failed", false);
+    } catch (e) {
+      toast("open error: " + e, false);
+    }
+  }
+
+  // Link chips attached to a group by the daemon (t.links): one per URL-valued property
+  // of the workspace status file, labeled with the property name. A chip with a single
+  // URL opens it; one with several opens a popup listing them all. Clicks don't bubble to
+  // the header (which toggles collapse / drags).
+  function renderLinkChips(t) {
+    const wrap = document.createElement("span");
+    wrap.className = "link-chips";
+    for (const link of t.links || []) {
+      const urls = link.urls || [];
+      if (!urls.length) continue;
+      const label = link.label || link.id;
+      const chip = document.createElement("a");
+      chip.className = "link-chip";
+      chip.textContent = urls.length > 1 ? `${label} (${urls.length})` : label;
+      chip.draggable = false;
+      if (urls.length === 1) {
+        chip.href = urls[0];
+        chip.title = urls[0];
+      } else {
+        chip.title = `${urls.length} links`;
+      }
+      if (link.color) {
+        chip.style.color = link.color;
+        chip.style.borderColor = rgba(link.color, 0.5);
+        chip.style.background = rgba(link.color, 0.12);
+      }
+      chip.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (urls.length === 1) openLink(urls[0]);
+        else showLinkListPopup(chip, label, urls);
+      });
+      wrap.appendChild(chip);
+    }
+    return wrap;
+  }
+
+  // Popup listing a multi-URL chip's links; each row opens in the browser.
+  function showLinkListPopup(anchor, label, urls) {
+    dismissPopup();
+    const popup = document.createElement("div");
+    popup.className = "link-list-popup";
+    popup.addEventListener("click", (ev) => ev.stopPropagation());
+
+    const title = document.createElement("div");
+    title.className = "link-list-title";
+    title.textContent = label;
+    popup.appendChild(title);
+
+    for (const url of urls) {
+      const item = document.createElement("a");
+      item.className = "link-list-item";
+      item.href = url;
+      item.textContent = url.replace(/^https?:\/\//, "");
+      item.title = url;
+      item.draggable = false;
+      item.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        dismissPopup();
+        openLink(url);
+      });
+      popup.appendChild(item);
+    }
+
+    document.body.appendChild(popup);
+    // Anchor below the chip, clamped to the viewport's right/left edges.
+    const rect = anchor.getBoundingClientRect();
+    popup.style.top = rect.bottom + 4 + "px";
+    const left = Math.min(rect.left, window.innerWidth - popup.offsetWidth - 8);
+    popup.style.left = Math.max(8, left) + "px";
+    activePopup = popup;
+  }
+
   function renderGroup2a(t) {
     const th = theme();
     const wrap = document.createElement("div");
@@ -311,7 +402,9 @@
     editBtn.title = "Rename tab";
     editBtn.addEventListener("click", (ev) => { ev.stopPropagation(); startGroupEdit(header, t); });
 
-    header.append(name, count, caret, editBtn, swatch);
+    header.append(name);
+    if ((t.links || []).length) header.append(renderLinkChips(t));
+    header.append(count, caret, editBtn, swatch);
     wrap.appendChild(header);
 
     if (!effectiveCollapsed) {
@@ -441,7 +534,9 @@
     editBtn.title = "Rename tab";
     editBtn.addEventListener("click", (ev) => { ev.stopPropagation(); startGroupEdit(header, t); });
 
-    header.append(caret, name, editBtn, swatch);
+    header.append(caret, name);
+    if ((t.links || []).length) header.append(renderLinkChips(t));
+    header.append(editBtn, swatch);
     wrap.appendChild(header);
 
     if (!effectiveCollapsed) {

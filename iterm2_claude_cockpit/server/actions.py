@@ -4,12 +4,29 @@ from __future__ import annotations
 
 import asyncio
 import shlex
+import subprocess
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import iterm2
 
 if TYPE_CHECKING:
     from .http import State
+
+
+def open_url(url: str) -> dict:
+    """Open an http(s) URL in the user's default browser via macOS `open`.
+
+    Synchronous (no iterm2 loop needed). Only http/https is allowed so the
+    endpoint can't be coaxed into launching arbitrary local handlers.
+    """
+    if not isinstance(url, str) or urlparse(url).scheme not in ("http", "https"):
+        return {"ok": False, "error": "only http(s) urls are allowed"}
+    try:
+        subprocess.run(["open", url], check=True, capture_output=True, timeout=5.0)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True}
 
 
 async def focus_node(app: iterm2.App, kind: str, node_id: str) -> dict:

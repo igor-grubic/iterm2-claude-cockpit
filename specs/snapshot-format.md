@@ -40,7 +40,8 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
   "active": false,
   "panes": [ <session>, ... ],
   "color": 2,
-  "collapsed": false
+  "collapsed": false,
+  "links": [ { "id": "pr_url", "label": "pr_url", "urls": ["https://github.com/org/repo/pull/12"], "color": "#8ab4f8" } ]
 }
 ```
 
@@ -53,6 +54,24 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
 | `panes` | array | Ordered list of session nodes |
 | `color` | int \| null | Group color index (0-5) set via `POST /api/set-tab-color`, or `null` if uncolored |
 | `collapsed` | boolean | Whether the group's panes are collapsed in the panel, set via `POST /api/set-tab-collapsed` |
+| `links` | array | Auto-discovered link chips for this group (see below). Always present, may be empty (`[]`) |
+
+### Link node (`tab.links[]`)
+
+A clickable chip the panel renders on the group header. Chips are **auto-discovered** from a *status file* (default `.cockpit.json`) read from a pane's working directory: one chip per **URL-valued property**, labeled with the property name. A chip with a single URL opens it (via `POST /api/open-url`); one with several opens a popup listing them all. Non-URL properties are ignored. See `specs/http-api.md` → `POST /api/open-url` and the README for details.
+
+```json
+{ "id": "pr_urls", "label": "pr_urls", "urls": ["https://github.com/org/a/pull/1", "https://github.com/org/b/pull/2"], "color": "#8ab4f8" }
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | The source property name (stable key, e.g. `"pr_url"`, `"jira_url"`) |
+| `label` | string | Chip text — the property name |
+| `urls` | array | The URL(s) the chip opens; always at least one entry |
+| `color` | string | Chip color (hex), derived deterministically from the property name |
+
+The links are resolved per group from the working directories of its panes: the first pane cwd whose status file yields at least one chip wins, so a workspace shared by several panes produces one chip set rather than one per pane. A group with no usable status file has `links: []`. Chips appear in the file's property order.
 
 ## Session node (pane)
 
@@ -90,5 +109,6 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
 - `windows` is always present, may be empty (`[]`)
 - `tabs` within a window is always present, may be empty
 - `panes` within a tab always contains at least one session (the tab's visible sessions)
+- `links` within a tab is always present, may be empty (`[]`)
 - `active` is mutually exclusive within a level: at most one window, one tab per window, and one session per tab is `active: true`
 - `id` values are stable for the lifetime of the session; they are reused by iTerm2 only after a restart
