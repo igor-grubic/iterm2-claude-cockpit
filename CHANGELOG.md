@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Self-update from the Settings panel (⚙ → Updates). "Check for updates" reports how far behind the install is and lists what changed; "Update & restart" fast-forwards the checkout and restarts the daemon in place, then reloads the panel — no terminal needed. Updates are only checked when you ask; nothing phones home in the background. The updater refuses to touch a checkout with uncommitted changes, one on a branch other than `main`, or an install that isn't a git clone, and tells you when an update changes `install.sh` so you know to re-run it.
 - Two selectable panel themes, chosen from the Settings panel: **Classic** (the default) — a JetBrains Mono, terminal-styled look with flat accent-bar groups and a text-glyph status mark — and **Modern**, the redesigned alternative described below, with rounded tinted group blocks and a colored status dot. The choice persists across restarts (`GET`/`POST /api/settings`).
 - Per-tab group color coding: click a tab's swatch to cycle through 6 colors (red, green, yellow, purple, blue, brown), tinting the tab's block and every pane in it. Click a color chip in the window header to filter the panel down to that color (other groups dim but stay visible). Set programmatically via `POST /api/set-tab-color`; colors persist across restarts.
 - Tab groups can be collapsed to just their header via `POST /api/set-tab-collapsed`; collapsed state persists across restarts.
@@ -22,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Drag-and-drop tab reordering: drag a tab's header in the panel to reorder it within its window. The new order is applied in iTerm2 via `POST /api/move-tab`.
 
 ### Changed
+- `POST /api/*` endpoints now reject requests from another origin. Binding to loopback never stopped another page in your browser from posting to the panel's endpoints, which matters more now that one of them can update and restart the daemon.
 - **Redesigned the panel's visual language** in the Modern theme: new dark palette, Space Grotesk/IBM Plex Mono type (bundled locally, no external font requests), and reworked spacing/radii throughout the tree, action grid, and bottom nav.
 - Bottom nav (iTerm / Claude / Settings / Restore) is now a plain-text 4-column bar with an underline on whichever tool is open, replacing the icon+label buttons.
 - The `+ Tab` / `+ Window` / `⊢ Split` / `⊤ Split` action buttons are shorter, giving the scrolling group list more vertical room.

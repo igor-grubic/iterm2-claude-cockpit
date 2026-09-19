@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -24,12 +25,31 @@ from urllib.parse import parse_qs, urlparse
 
 import iterm2
 
-from . import actions, persistence, tree
+from . import actions, persistence, tree, updater
 
 log = logging.getLogger("iterm2_claude_cockpit.http")
 
 WEBVIEW_DIR = Path(__file__).resolve().parent.parent / "webview"
-_PLUGIN_VERSION = "0.1.0"  # keep in sync with __init__.py and pyproject.toml
+
+
+def _read_version() -> str:
+    """Read __version__ out of the package's __init__.py.
+
+    It can't simply be imported: the daemon runs with the *package* dir on
+    sys.path (see the entry script), so `server` is top-level and the enclosing
+    `iterm2_claude_cockpit` package isn't importable by name at runtime. Reading
+    the sibling file keeps one source of truth instead of a third copy of the
+    literal that has to be hand-synced.
+    """
+    init = Path(__file__).resolve().parent.parent / "__init__.py"
+    try:
+        match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', init.read_text(), re.MULTILINE)
+    except OSError:
+        return "unknown"
+    return match.group(1) if match else "unknown"
+
+
+_PLUGIN_VERSION = _read_version()
 
 # Minimum seconds between workspace-state writes (layout changes are debounced).
 _PERSIST_DEBOUNCE_SECONDS = 5.0
@@ -71,6 +91,8 @@ class State:
         # Set True while a structural write (e.g. move-tab) is in flight to prevent
         # layout-change notifications from flooding iTerm2 with concurrent reads.
         self.suppress_refresh: bool = False
+        # Latched by /api/update/apply so a double-click can't race the re-exec.
+        self.update_in_flight: bool = False
         # Workspace-state persistence: debounce bookkeeping (see refresh()).
         self._last_persist_ts: float = 0.0
         self._last_persisted_sig: str = ""
@@ -191,6 +213,25 @@ class _Handler(BaseHTTPRequestHandler):
     def state(self) -> State:
         return self.server.state  # type: ignore[attr-defined]
 
+    def _origin_allowed(self) -> bool:
+        """Reject state-changing requests initiated by another origin.
+
+        The server is bound to loopback, but that alone never stopped a page in
+        the user's browser from POSTing here — browsers happily send simple
+        cross-origin POSTs and the panel's endpoints act on them. That was
+        already true for close-pane; /api/update/apply raises the stakes, since
+        it moves the checkout the daemon runs from and re-execs it.
+
+        Browsers set Origin on every cross-origin POST, so a mismatch is a
+        reliable reject. A *missing* Origin means a non-browser client (curl,
+        a local script) — those already have the run of the machine, so there
+        is nothing to defend against there.
+        """
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return True
+        return origin in self.server.allowed_origins  # type: ignore[attr-defined]
+
     def _send_json(self, payload: dict, status: int = 200) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
@@ -254,6 +295,11 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/api/settings":
             self._send_json({"theme": self.state.theme})
             return
+        if path == "/api/update/check":
+            # Network-bound (git fetch); updater.check never raises, so any
+            # failure still arrives as a 200 with a machine-readable reason.
+            self._send_json(updater.check())
+            return
         if path == "/api/restore-preview":
             snap = self.state.restore_snapshot
             if not snap:
@@ -283,6 +329,10 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self) -> None:  # noqa: N802
+        if not self._origin_allowed():
+            log.warning("rejected cross-origin POST to %s from %r", self.path, self.headers.get("Origin"))
+            self._send_json({"ok": False, "error": "cross-origin request rejected"}, status=403)
+            return
         path = self.path.split("?", 1)[0]
         body = self._read_json_body()
         try:
@@ -383,6 +433,29 @@ class _Handler(BaseHTTPRequestHandler):
                         self.state.tab_collapsed.pop(tab_id, None)
                 self._send_json({"ok": True})
                 return
+            if path == "/api/update/apply":
+                with self.state.lock:
+                    if self.state.update_in_flight:
+                        self._send_json({"ok": False, "reason": "already_updating"})
+                        return
+                    self.state.update_in_flight = True
+                result = updater.apply(str(body.get("sha") or ""))
+                if not result.get("ok"):
+                    with self.state.lock:
+                        self.state.update_in_flight = False
+                    self._send_json(result)
+                    return
+                # Stay latched: the process is about to be replaced, and a second
+                # apply landing in that window would race the re-exec.
+                result["restarting"] = True
+                try:
+                    self._send_json(result)
+                finally:
+                    # The merge already landed on disk, so the daemon is now running
+                    # code older than its own checkout. Restart even if the panel
+                    # went away before it could be told (closed toolbelt, dead socket).
+                    updater.schedule_restart(self.state.flush_now)
+                return
             if path == "/api/settings":
                 theme = persistence.normalize_theme(body.get("theme"))
                 with self.state.lock:
@@ -400,6 +473,13 @@ class _Handler(BaseHTTPRequestHandler):
 def start_server_thread(state: State, host: str, port: int) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((host, port), _Handler)
     server.state = state  # type: ignore[attr-defined]
+    # The panel is served from exactly one of these; anything else POSTing here
+    # is another page in the user's browser (see _Handler._origin_allowed).
+    server.allowed_origins = {  # type: ignore[attr-defined]
+        f"http://{host}:{port}",
+        f"http://localhost:{port}",
+        f"http://127.0.0.1:{port}",
+    }
     thread = threading.Thread(target=server.serve_forever, name="iterm-workflow-http", daemon=True)
     thread.start()
     log.info("serving on http://%s:%d/", host, port)

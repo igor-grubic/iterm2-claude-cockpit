@@ -714,6 +714,139 @@
 
   const THEME_CHOICES = [["1a", "Classic"], ["2a", "Modern"]];
 
+  // ── self-update ───────────────────────────────────────────────────
+  // Why each blocker can't be auto-resolved, phrased as what the user should do.
+  const UPDATE_BLOCKERS = {
+    dirty_tree: "You have uncommitted changes in the checkout. Commit or stash them first.",
+    wrong_branch: "The checkout is on another branch. Switch to main to update from here.",
+    detached_head: "The checkout is in a detached-HEAD state. Run `git checkout main` first.",
+    no_upstream: "This branch doesn't track origin/main. Update manually.",
+    not_a_git_checkout: "This install isn't a git clone, so it can't update itself. Re-install per the README.",
+    git_missing: "The `git` command isn't available on PATH.",
+    timeout: "git timed out — check your network, or that a credential prompt isn't waiting.",
+    not_a_fast_forward: "The checkout has local commits that aren't upstream. Update manually.",
+    already_updating: "An update is already running.",
+  };
+
+  function updateBlockerText(reason, detail) {
+    return UPDATE_BLOCKERS[reason] || detail || reason || "Update check failed.";
+  }
+
+  // Poll /api/about until the re-exec'd daemon answers again, then reload so the
+  // panel picks up the new HTML/CSS/JS (all served no-store, so no cache busting).
+  async function waitForRestart(statusEl, timeoutMs = 30000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 500));
+      try {
+        const res = await fetch("/api/about", { cache: "no-store" });
+        if (res.ok) { location.reload(); return; }
+      } catch (_) { /* daemon is mid-restart; keep waiting */ }
+    }
+    statusEl.textContent = "Updated, but the panel didn't come back. Restart iTerm2.";
+  }
+
+  function renderUpdateSection(container) {
+    container.innerHTML = "";
+    const status = document.createElement("div");
+    status.className = "update-status";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "settings-theme-btn";
+    btn.textContent = "Check for updates";
+    container.append(btn, status);
+
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      status.textContent = "Checking…";
+      let data;
+      try {
+        const res = await fetch("/api/update/check", { cache: "no-store" });
+        data = await res.json();
+      } catch (e) {
+        status.textContent = "Check failed: " + e.message;
+        btn.disabled = false;
+        return;
+      }
+      btn.disabled = false;
+
+      if (!data.ok) {
+        status.textContent = updateBlockerText(data.reason, data.detail);
+        return;
+      }
+      if (!data.update_available) {
+        status.textContent = `Up to date (${data.current}).`;
+        return;
+      }
+
+      status.innerHTML = "";
+      const head = document.createElement("div");
+      head.className = "update-head";
+      head.textContent = `${data.behind} update${data.behind === 1 ? "" : "s"} available — ${data.current} → ${data.latest}`;
+      status.appendChild(head);
+
+      const list = document.createElement("ul");
+      list.className = "update-commits";
+      for (const c of data.commits) {
+        const li = document.createElement("li");
+        li.textContent = c.subject;
+        list.appendChild(li);
+      }
+      status.appendChild(list);
+
+      if (data.installer_changed) {
+        const warn = document.createElement("div");
+        warn.className = "update-warn";
+        warn.textContent = "This update changes install.sh — re-run `bash install.sh` afterwards.";
+        status.appendChild(warn);
+      }
+
+      if (data.blocked) {
+        const blocked = document.createElement("div");
+        blocked.className = "update-warn";
+        blocked.textContent = updateBlockerText(data.blocked);
+        status.appendChild(blocked);
+        btn.textContent = "Check again";
+        return;
+      }
+
+      btn.classList.add("hidden");
+      const apply = document.createElement("button");
+      apply.type = "button";
+      apply.className = "settings-theme-btn update-apply";
+      apply.textContent = "Update & restart";
+      status.appendChild(apply);
+
+      apply.addEventListener("click", async () => {
+        apply.disabled = true;
+        apply.textContent = "Updating…";
+        try {
+          const res = await fetch("/api/update/apply", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sha: data.latest }),
+          });
+          const result = await res.json();
+          if (!result.ok) {
+            apply.remove();
+            status.appendChild(Object.assign(document.createElement("div"), {
+              className: "update-warn",
+              textContent: updateBlockerText(result.reason, result.detail),
+            }));
+            return;
+          }
+          apply.textContent = "Restarting…";
+          await waitForRestart(apply);
+        } catch (e) {
+          apply.disabled = false;
+          apply.textContent = "Update & restart";
+          toast("update failed: " + e.message, false);
+        }
+      });
+    });
+  }
+
+
   function applyTheme(id) {
     currentTheme = id;
     document.body.dataset.theme = id;
@@ -756,6 +889,11 @@
         themeRow.appendChild(btn);
       }
       addRow("Theme", themeRow);
+
+      const updateRow = document.createElement("div");
+      updateRow.className = "update-row";
+      renderUpdateSection(updateRow);
+      addRow("Updates", updateRow);
 
       body.innerHTML = "";
       body.appendChild(dl);
