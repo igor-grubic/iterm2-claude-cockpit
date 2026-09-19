@@ -37,10 +37,10 @@ STATE_PATH = STATE_DIR / "state.json"  # rolling mirror of the current live layo
 RESTORE_PATH = STATE_DIR / "restore.json"  # last-good layout the Restore action recreates
 SETTINGS_PATH = STATE_DIR / "settings.json"  # plain UI preferences (e.g. panel theme)
 
-# Panel visual themes selectable in Settings. "2a" is the modern redesign (default);
-# "1a" is the classic terminal-styled alternative. See webview/app.js's THEMES table.
+# Panel visual themes selectable in Settings. "1a" is the classic terminal-styled
+# look (default); "2a" is the modern redesign. See webview/app.js's THEMES table.
 VALID_THEMES = ("2a", "1a")
-DEFAULT_THEME = "2a"
+DEFAULT_THEME = "1a"
 
 # Bump when the on-disk shape changes incompatibly; load_state tolerates older
 # files by simply returning whatever parsed (restore is defensive about fields).

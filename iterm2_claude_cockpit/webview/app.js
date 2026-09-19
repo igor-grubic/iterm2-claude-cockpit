@@ -17,7 +17,7 @@
   const ACTIVE_FALLBACK = "#4ea1ff";
 
   // Per-theme color palette (index 0-5, cycled by clicking a swatch) plus the neutral/label/
-  // title colors that go with it. Selectable in Settings; "2a" is the default.
+  // title colors that go with it. Selectable in Settings; "1a" is the default.
   // Both palettes are ordered: red, green, yellow, purple, blue, brown.
   const THEMES = {
     "2a": {
@@ -37,8 +37,8 @@
       titleOn: "#ecf6f4",
     },
   };
-  let currentTheme = "2a";
-  function theme() { return THEMES[currentTheme] || THEMES["2a"]; }
+  let currentTheme = "1a";
+  function theme() { return THEMES[currentTheme] || THEMES["1a"]; }
 
   function rgba(hex, a) {
     const n = parseInt(hex.replace("#", ""), 16);
@@ -712,7 +712,7 @@
     });
   }
 
-  const THEME_CHOICES = [["2a", "Modern"], ["1a", "Classic"]];
+  const THEME_CHOICES = [["1a", "Classic"], ["2a", "Modern"]];
 
   function applyTheme(id) {
     currentTheme = id;

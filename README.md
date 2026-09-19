@@ -10,7 +10,7 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 ## Features
 
 - Live hierarchical tree: window → tab → pane, updated in real time
-- Two selectable panel themes (Settings panel → Theme): **Modern**, the default, and **Classic**, a JetBrains Mono terminal-styled alternative. The choice persists across restarts
+- Two selectable panel themes (Settings panel → Theme): **Classic**, the default, a JetBrains Mono terminal-styled look, and **Modern**, a softer redesigned alternative. The choice persists across restarts
 - Per-tab group color coding: click a tab's swatch to cycle through 6 colors, which tints the tab's block and every pane in it; click a color chip in the header to filter the panel down to that color. Colors and collapsed state persist across restarts
 - Claude panes stand out at a glance with a yellow pane title — detected via the pane's TTY, so it works for the Node-based install too
 - Click any pane to focus it immediately; its close (×) button is always visible; on the active pane, click its path to copy the working directory to the clipboard. Hover a pane for a tooltip with its job, working directory, and last output line
