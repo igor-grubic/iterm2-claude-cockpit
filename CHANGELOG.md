@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
-- Two selectable panel themes, chosen from the Settings panel: **Modern** (the redesigned default look below) and **Classic** — a JetBrains Mono, terminal-styled alternative with flat accent-bar groups and a text-glyph status mark instead of a colored dot. The choice persists across restarts (`GET`/`POST /api/settings`).
+- Two selectable panel themes, chosen from the Settings panel: **Classic** (the default) — a JetBrains Mono, terminal-styled look with flat accent-bar groups and a text-glyph status mark — and **Modern**, the redesigned alternative described below, with rounded tinted group blocks and a colored status dot. The choice persists across restarts (`GET`/`POST /api/settings`).
 - Per-tab group color coding: click a tab's swatch to cycle through 6 colors (red, green, yellow, purple, blue, brown), tinting the tab's block and every pane in it. Click a color chip in the window header to filter the panel down to that color (other groups dim but stay visible). Set programmatically via `POST /api/set-tab-color`; colors persist across restarts.
 - Tab groups can be collapsed to just their header via `POST /api/set-tab-collapsed`; collapsed state persists across restarts.
 - Claude panes stand out at a glance: the pane title renders in yellow. Detection is via a `ps` check on the pane's TTY, so it works for the npm/Node install too (which shows a `node` job rather than `claude`).
@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Drag-and-drop tab reordering: drag a tab's header in the panel to reorder it within its window. The new order is applied in iTerm2 via `POST /api/move-tab`.
 
 ### Changed
-- **Redesigned the panel's visual language**: new dark palette, Space Grotesk/IBM Plex Mono type (bundled locally, no external font requests), and reworked spacing/radii throughout the tree, action grid, and bottom nav.
+- **Redesigned the panel's visual language** in the Modern theme: new dark palette, Space Grotesk/IBM Plex Mono type (bundled locally, no external font requests), and reworked spacing/radii throughout the tree, action grid, and bottom nav.
 - Bottom nav (iTerm / Claude / Settings / Restore) is now a plain-text 4-column bar with an underline on whichever tool is open, replacing the icon+label buttons.
 - The `+ Tab` / `+ Window` / `⊢ Split` / `⊤ Split` action buttons are shorter, giving the scrolling group list more vertical room.
 - The ✎ rename and × close buttons are now always visible instead of hover-only; the color swatch moved to the last position in the group header (after ✎), so it doesn't jump around as the other buttons appear.
