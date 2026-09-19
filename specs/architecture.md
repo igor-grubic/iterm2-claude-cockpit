@@ -64,6 +64,9 @@ Minimal HTTP server (no framework). Routes:
 - `GET /api/tree` → snapshot JSON
 - `POST /api/*` → action dispatch
 - `GET /static/*` → bundled webview assets
+- `GET /api/update/check`, `POST /api/update/apply` → self-update (see `server/updater.py`)
+
+`POST` handlers reject requests whose `Origin` header isn't the panel's own. Loopback binding alone never stopped another page in the user's browser from POSTing here, and `/api/update/apply` moves the checkout the daemon runs from.
 
 ### `server/actions.py`
 Handles user-initiated actions (focus window/tab/pane, create tab/window, split pane, close session, restore workspace). Returns `{"ok": true}` or `{"error": "..."}`. `restore_workspace` recreates persisted windows/tabs/panes, each as a plain shell `cd`'d into its saved directory, and re-applies each tab's saved name/color/collapsed state onto the freshly created tab id.
@@ -79,6 +82,17 @@ Durable workspace state. Serializes the layout (windows → tabs → panes, each
 `State.__init__` loads `restore.json` (falling back to `state.json` for installs predating the split) into an in-memory `restore_snapshot`, seeds `tab_names`/`tab_colors`/`tab_collapsed` from it, and serves it to Restore — so Restore always recreates the *previous* session, not the current one as it evolves. Each tab's `name`/`color`/`collapsed` are also embedded directly on its entry in the persisted `windows` list (not just the top-level dicts), since `actions.restore_workspace` re-applies them to the *freshly created* tab id — the old id is gone once iTerm2 itself has restarted.
 
 A third, independent file, `settings.json`, holds plain UI preferences unrelated to the window/tab/pane layout — currently just the selected panel theme (`GET`/`POST /api/settings`). It has no freeze-window logic like `restore.json`; `save_settings`/`load_settings` are thin wrappers around the same atomic-write/read helpers.
+
+### `server/updater.py`
+In-place self-update over the checkout the daemon is running from. `check()` runs `git fetch origin main` and reports how far behind `HEAD` is; `apply(sha)` fast-forwards onto that exact sha and `schedule_restart()` re-execs the process.
+
+Split in two on purpose: `git fetch` already downloads the new commits *and their contents* into `.git` without touching the working tree, so the apply step is purely local — moving a ref and writing files out — and can't half-fail on the network. Applying the sha the check reported (rather than re-resolving `origin/main`) means the user installs exactly the commits whose subjects the panel showed them.
+
+Every git call runs with a timeout and `GIT_TERMINAL_PROMPT=0` / `ssh -oBatchMode=yes`, because a credential or passphrase prompt has no terminal to appear on here and would park an HTTP worker thread indefinitely. `git merge --ff-only` refuses rather than merging, so a failed apply leaves no partial state and no conflict to resolve.
+
+The restart is `os.execv` onto the same interpreter and argv: the process image is replaced while the pid survives, so iTerm2 never sees its AutoLaunch script exit. The websocket fd closes on exec and the new image reconnects and re-registers the toolbelt; the HTTP socket closes with it and rebinds immediately (`ThreadingHTTPServer` sets `SO_REUSEADDR`). The panel's poll loop rides out the ~1s gap with its existing "disconnected — retrying" path, then reloads once `/api/about` answers.
+
+This module imports nothing from `iterm2` and takes an explicit `root`, so the whole flow is unit-tested against throwaway repositories in `tests/test_updater.py`.
 
 ### `webview/`
 Static browser assets. `app.js` polls `/api/tree`, diffs the response, and updates the DOM. `index.html` also wires the iTerm2 and Claude Code cheatsheet buttons, which fetch static HTML fragments (`iterm_cheatsheet.html`, `claude_cheatsheet.html`).

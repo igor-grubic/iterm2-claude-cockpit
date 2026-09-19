@@ -732,6 +732,26 @@ footer .row.icons {
 .settings-theme-btn:hover { background: var(--btn-hover); color: var(--fg); }
 .settings-theme-btn.active { border-color: var(--accent); color: var(--fg); }
 
+/* ── self-update (Settings → Updates) ───────────────────────────── */
+.update-row { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+
+.update-status { font-size: 11px; color: var(--fg-muted); line-height: 1.45; }
+
+.update-head { color: var(--fg); margin-bottom: 4px; }
+
+.update-commits {
+  margin: 0 0 6px;
+  padding-left: 14px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.update-commits li { margin: 1px 0; }
+
+.update-warn { color: var(--clr-attention); margin: 4px 0; }
+
+.update-apply { margin-top: 4px; }
+.update-apply:disabled { opacity: 0.6; cursor: default; }
+
 /* ── misc ───────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 

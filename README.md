@@ -19,6 +19,7 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 - Session restore (⟲ button) — recreate your windows, tabs, and panes in their saved working directories after closing or updating iTerm2
 - Claude Code cheatsheet (✦ button) — a built-in quick reference of slash commands and keyboard shortcuts
 - Settings panel (⚙ button) — switch the panel theme and see the plugin version at a glance
+- Self-update (Settings → Updates) — check for new commits, see what changed, and update and restart in place without touching the terminal. Nothing is checked in the background; it only runs when you ask
 - Zero external dependencies — stdlib only, beyond the `iterm2` library bundled with iTerm2
 - Runs as an AutoLaunch daemon; starts automatically with iTerm2
 
@@ -110,6 +111,26 @@ Click the **⟲ Restore** button in the footer (it shows a summary — how many 
 
 What it does **not** restore: running processes (Claude sessions, dev servers, builds — panes come back as a plain shell), terminal scrollback, and exact split sizes (panes come back as a simple vertical split). Custom tab names, group colors, and collapsed state are persisted in the same file and also survive restarts.
 
+## Updating
+
+Open **Settings (⚙) → Updates → Check for updates**. If the checkout is behind, the panel lists
+what changed and offers **Update & restart**, which fast-forwards the clone and re-execs the
+daemon in place — the panel blinks "disconnected" for a second and reloads itself.
+
+The equivalent by hand:
+
+```bash
+cd <repo> && git pull --ff-only
+```
+
+Then restart iTerm2 (or let the panel's update button do it).
+
+The updater deliberately refuses to touch a checkout it doesn't fully control. It tells you
+to update manually when the working tree has uncommitted changes, when you're on a branch
+other than `main`, or when the install isn't a git clone at all. If an update changes
+`install.sh`, the panel says so — a fast-forward doesn't re-run the installer, so run
+`bash install.sh` again afterwards.
+
 ## Troubleshooting
 
 **Check the console first:** `Scripts → Manage → Console` — Python tracebacks appear here.
@@ -163,6 +184,24 @@ This is a per-profile setting. Enable it in `Settings → Profiles → [your pro
 ### The `defaults write com.googlecode.iterm2 OpenToolbelt -bool true` command doesn't work
 
 In iTerm2 3.6+ the global `OpenToolbelt` defaults key is overridden by per-profile settings. Use the profile setting above instead.
+
+---
+
+### "Check for updates" says the checkout has uncommitted changes
+
+The updater only fast-forwards a clean tree, so it never discards your work. Commit or stash
+your changes (`git -C <repo> stash`), then check again. `git -C <repo> status` shows what it
+is seeing — untracked files count too, since a fast-forward that wants to create a path you
+already have locally would fail partway.
+
+---
+
+### The panel doesn't come back after an update
+
+The daemon re-execs itself in place, which normally takes about a second. If the panel is
+still showing "disconnected — retrying" after ~30s, restart iTerm2 — the update itself has
+already been applied to the checkout, only the restart failed. `Scripts → Manage → Console`
+will have the traceback.
 
 ---
 

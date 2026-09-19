@@ -262,6 +262,94 @@ The restored workspace is the layout as it was during the *previous* daemon sess
 
 ---
 
+## Self-update
+
+The install is a `git clone` plus a symlink (see `install.sh`), so the checkout *is* the
+running app. Updating is therefore a fast-forward of that checkout followed by an in-place
+re-exec of the daemon. Implemented in `server/updater.py`; the tracked ref is
+`origin/main`.
+
+### `GET /api/update/check`
+
+Runs `git fetch origin main` in the checkout, then reports how far behind it is. This is
+the only network call the daemon ever makes, and it only happens when the user clicks
+"Check for updates" in Settings — there is no background polling.
+
+`git fetch` downloads the new commits *and their contents* into `.git` without touching
+the working tree, so by the time this returns, everything `POST /api/update/apply` needs is
+already on disk.
+
+**Response:** `200 application/json`
+
+```json
+{
+  "ok": true,
+  "update_available": true,
+  "behind": 3,
+  "current": "5deafb2",
+  "latest": "79161b2",
+  "latest_date": "2026-09-19T11:22:34+02:00",
+  "commits": [
+    { "sha": "79161b2", "subject": "feat: make Classic the default panel theme (#14)" }
+  ],
+  "installer_changed": false
+}
+```
+
+- `behind` — commits on `origin/main` not in `HEAD`. `0` means up to date, and
+  `update_available` is `false`.
+- `commits` — newest first, capped at 20.
+- `installer_changed` — true when the update touches `install.sh` / `uninstall.sh`. A
+  fast-forward does not re-run the installer, so the panel tells the user to run it.
+- `blocked` — present when an update exists but this daemon can't apply it. One of
+  `dirty_tree`, `wrong_branch`, `detached_head`, `no_upstream`. The update is still
+  reported; only the apply button is withheld.
+
+**Never returns a non-200 for a failed check.** "Couldn't check" is an ordinary state
+(offline, zip download instead of a clone), so failures come back as:
+
+```json
+{ "ok": false, "reason": "not_a_git_checkout", "detail": "..." }
+```
+
+`reason` is one of `not_a_git_checkout`, `git_missing`, `timeout`, `git_failed`,
+`internal_error`.
+
+---
+
+### `POST /api/update/apply`
+
+Fast-forwards the checkout to `sha`, then re-execs the daemon.
+
+**Request body:** `application/json`
+
+```json
+{ "sha": "79161b2" }
+```
+
+`sha` is the `latest` value from a preceding check, **not** a re-resolved ref: the user
+installs exactly the commits whose subjects they were shown, even if someone pushed again
+while the modal sat open.
+
+**Response:** `200 application/json`
+
+```json
+{ "ok": true, "previous": "5deafb2", "current": "79161b2", "restarting": true }
+```
+
+The response is sent *before* the restart; the daemon then re-execs ~0.5s later. The panel
+polls `GET /api/about` until it answers and reloads itself.
+
+Preconditions are re-verified here rather than trusted from the check (the tree may have
+gone dirty in between), and `sha` must be a descendant of `HEAD`. On any failure nothing is
+changed and the response is `{ "ok": false, "reason": "..." }` with one of the `blocked`
+reasons above, plus `bad_sha`, `not_a_fast_forward`, or `already_updating`.
+
+Because `git merge --ff-only` refuses rather than merging, a failed apply never leaves a
+partial state or a conflict to resolve.
+
+---
+
 ## Static assets
 
 ### `GET /static/<path>`
@@ -273,6 +361,16 @@ Serves files from `iterm2_claude_cockpit/webview/`. Used by the panel for `app.j
 Serves the bundled webfonts (`webview/fonts/`) referenced by `styles.css`'s `@font-face` rules: `space-grotesk-variable.woff2`, `ibm-plex-mono-400.woff2`, `ibm-plex-mono-500.woff2`. An explicit filename whitelist, not a generic directory listing.
 
 ---
+
+## Cross-origin requests
+
+All `POST` endpoints reject requests carrying an `Origin` header that isn't the panel's own
+(`http://127.0.0.1:9876` / `http://localhost:9876`), with `403` and
+`{ "ok": false, "error": "cross-origin request rejected" }`.
+
+Binding to loopback never stopped another page in the user's browser from POSTing here, and
+these endpoints act on the request. A missing `Origin` is allowed: that means a non-browser
+client (curl, a local script), which already has the run of the machine.
 
 ## Error handling
 
