@@ -202,6 +202,50 @@ Set a custom display name for a tab. The name persists in the daemon's memory un
 
 ---
 
+### `POST /api/open-url`
+
+Open a URL in the user's default browser (macOS `open`). Used by the group-header link chips (`tab.links[]`), since the panel runs in a WKWebView where `window.open` on an external URL is unreliable.
+
+**Request body:** `application/json`
+
+```json
+{ "url": "https://github.com/org/repo/pull/12" }
+```
+
+Only `http`/`https` URLs are accepted; anything else returns `{ "ok": false, "error": "only http(s) urls are allowed" }` without launching anything.
+
+**Response:** `200 application/json` — `{ "ok": true }` or `{ "ok": false, "error": "..." }`
+
+#### Where the chips come from (status file)
+
+The chips in `tab.links[]` are **auto-discovered** from a status file (default `.cockpit.json`) read from a group's panes' working directories. Every **URL-valued property** of that JSON object becomes a chip, labeled with the property name:
+
+- a property whose value is an `http(s)` URL string → a chip that opens that URL;
+- a property whose value is a list of URLs → a chip that opens a popup listing them all (the panel opens it directly when the list has just one);
+- any other property (e.g. a plain `branch` string) is ignored.
+
+```json
+{
+  "jira_url": "https://jira.example.com/browse/PROJ-1",
+  "pr_urls": ["https://github.com/org/a/pull/1", "https://github.com/org/b/pull/2"],
+  "branch": "PROJ-1-do-the-thing"
+}
+```
+
+→ a `jira_url` chip (opens the ticket) and a `pr_urls` chip (popup of both PRs); `branch` is ignored.
+
+The daemon is agnostic to what the properties mean — it just turns URL-valued keys into chips, in file order, with a color derived deterministically from each key.
+
+The only configurable knob is **which file** to read, via `~/.config/iterm2-claude-cockpit/links.json`:
+
+```json
+{ "file": ".cockpit.json" }
+```
+
+An absent or malformed config falls back to `.cockpit.json`. The config (and the status files) are cached by mtime, so edits take effect on the next tree build without a daemon restart.
+
+---
+
 ### `POST /api/set-tab-color`
 
 Set or clear a tab's group color. Persists across restarts the same way `tab_names` does.

@@ -35,8 +35,9 @@ See `specs/architecture.md` for the full picture. Quick map:
 |--------|------|
 | `iterm2_claude_cockpit.py` | Daemon entry point; registers iTerm2 update hooks |
 | `server/tree.py` | Builds the JSON snapshot (window → tab → pane) |
+| `server/links.py` | Auto-discovers group link chips from a per-workspace status file (URL-valued properties → chips) |
 | `server/http.py` | Serves the panel HTML and `/api/*` routes |
-| `server/actions.py` | Handles user actions: focus, create, close, restore |
+| `server/actions.py` | Handles user actions: focus, create, close, restore, open-url |
 | `server/persistence.py` | Saves/loads the workspace layout for session restore |
 | `webview/` | The browser-side panel (HTML/CSS/JS), incl. the Claude cheatsheet |
 

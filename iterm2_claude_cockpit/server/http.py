@@ -383,6 +383,9 @@ class _Handler(BaseHTTPRequestHandler):
                         self.state.tab_collapsed.pop(tab_id, None)
                 self._send_json({"ok": True})
                 return
+            if path == "/api/open-url":
+                self._send_json(actions.open_url(body.get("url", "")))
+                return
             if path == "/api/settings":
                 theme = persistence.normalize_theme(body.get("theme"))
                 with self.state.lock:
