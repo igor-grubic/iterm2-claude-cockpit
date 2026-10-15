@@ -69,10 +69,10 @@ class NormalizeThemeTest(unittest.TestCase):
         self.assertEqual(persistence.normalize_theme("1a"), "1a")
         self.assertEqual(persistence.normalize_theme("2a"), "2a")
 
-    def test_invalid_or_missing_defaults_to_2a(self) -> None:
-        self.assertEqual(persistence.normalize_theme(None), "2a")
-        self.assertEqual(persistence.normalize_theme("bogus"), "2a")
-        self.assertEqual(persistence.normalize_theme(""), "2a")
+    def test_invalid_or_missing_defaults_to_classic(self) -> None:
+        self.assertEqual(persistence.normalize_theme(None), "1a")
+        self.assertEqual(persistence.normalize_theme("bogus"), "1a")
+        self.assertEqual(persistence.normalize_theme(""), "1a")
 
 
 class ShouldUpdateRestoreTest(unittest.TestCase):

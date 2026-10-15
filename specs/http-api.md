@@ -33,10 +33,10 @@ Returns the current UI settings.
 **Response:** `200 application/json`
 
 ```json
-{ "theme": "2a" }
+{ "theme": "1a" }
 ```
 
-`theme` — the selected panel visual theme: `"2a"` (default, "Modern") or `"1a"` ("Classic").
+`theme` — the selected panel visual theme: `"1a"` (default, "Classic") or `"2a"` ("Modern").
 
 ---
 
