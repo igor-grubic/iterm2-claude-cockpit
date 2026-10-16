@@ -41,6 +41,7 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
   "panes": [ <session>, ... ],
   "color": 2,
   "collapsed": false,
+  "sleeping": false,
   "links": [ { "id": "pr_url", "label": "pr_url", "urls": ["https://github.com/org/repo/pull/12"], "color": "#8ab4f8" } ]
 }
 ```
@@ -52,8 +53,9 @@ The `/api/tree` endpoint returns a JSON object describing the full iTerm2 sessio
 | `title` | string | Display label: custom name if one is set via `POST /api/rename-tab`, otherwise `"Tab N"` (1-indexed) |
 | `active` | boolean | Whether this is the frontmost tab in its window |
 | `panes` | array | Ordered list of session nodes |
-| `color` | int \| null | Group color index (0-5) set via `POST /api/set-tab-color`, or `null` if uncolored |
+| `color` | int \| null | Group color index (0-5) set via `POST /api/set-tab-color`, or `null` if uncolored. Retains the original color while sleeping; grey is a presentation-only override |
 | `collapsed` | boolean | Whether the group's panes are collapsed in the panel, set via `POST /api/set-tab-collapsed` |
+| `sleeping` | boolean | Visual-only sleep state, set via `POST /api/set-tab-sleeping`. Sleeping groups render grey and collapsed; processes are unaffected. Defaults to `false` for older saved workspaces |
 | `links` | array | Auto-discovered link chips for this group (see below). Always present, may be empty (`[]`) |
 
 ### Link node (`tab.links[]`)
@@ -110,5 +112,6 @@ The links are resolved per group from the working directories of its panes: the 
 - `tabs` within a window is always present, may be empty
 - `panes` within a tab always contains at least one session (the tab's visible sessions)
 - `links` within a tab is always present, may be empty (`[]`)
+- `sleeping` is always present on tabs. A sleeping tab always has `collapsed: true`; waking sets both to `false` without changing `color`
 - `active` is mutually exclusive within a level: at most one window, one tab per window, and one session per tab is `active: true`
 - `id` values are stable for the lifetime of the session; they are reused by iTerm2 only after a restart

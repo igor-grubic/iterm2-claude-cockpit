@@ -12,9 +12,10 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 - Live hierarchical tree: window → tab → pane, updated in real time
 - Two selectable panel themes (Settings panel → Theme): **Classic**, the default, a JetBrains Mono terminal-styled look, and **Modern**, a softer redesigned alternative. The choice persists across restarts
 - Per-tab group color coding: click a tab's swatch to cycle through 6 colors, which tints the tab's block and every pane in it; click a color chip in the header to filter the panel down to that color. Colors and collapsed state persist across restarts
+- Put a tab to sleep with the **moon** button between rename and the color swatch: its group turns grey and its panes collapse. Click the moon again to restore its original color and expand its panes. While asleep, the name/caret and color swatch are disabled; shells and processes keep running. Sleep state persists across restarts and workspace restore
 - Claude panes stand out at a glance with a yellow pane title — detected via the pane's TTY, so it works for the Node-based install too
 - Auto-discovered link chips on group headers — every URL in a workspace status file becomes a labeled chip that opens in your browser (arrays open a popup of all their links); see [Group link chips](#group-link-chips) below
-- Click any pane to focus it immediately; its close (×) button is always visible; on the active pane, click its path to copy the working directory to the clipboard. Hover a pane for a tooltip with its job, working directory, and last output line
+- Click any pane to focus it immediately; its close (×) button is always visible. Hover the folder icon beside × to see the full working directory, or click it to copy the path without focusing the pane (active or inactive). The icon is disabled when the directory is unavailable. Hover a pane for a tooltip with its job, working directory, and last output line
 - Rename tabs inline (✎ button next to the name) or programmatically via `POST /api/rename-tab`; custom names persist until the tab or window is closed
 - Create new tabs and windows from the panel
 - Session restore (⟲ button) — recreate your windows, tabs, and panes in their saved working directories after closing or updating iTerm2
@@ -109,7 +110,7 @@ Two files are kept: `state.json` mirrors your *current* layout, while `restore.j
 
 Click the **⟲ Restore** button in the footer (it shows a summary — how many windows, tabs, and panes — and confirms first) to recreate the saved windows, tabs, and panes. Each pane comes back as a plain shell `cd`'d into its saved directory. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive. To pick a Claude conversation back up, run `claude --continue` (or `claude --resume`) in the restored pane.
 
-What it does **not** restore: running processes (Claude sessions, dev servers, builds — panes come back as a plain shell), terminal scrollback, and exact split sizes (panes come back as a simple vertical split). Custom tab names, group colors, and collapsed state are persisted in the same file and also survive restarts.
+What it does **not** restore: running processes (Claude sessions, dev servers, builds — panes come back as a plain shell), terminal scrollback, and exact split sizes (panes come back as a simple vertical split). Custom tab names, group colors, collapsed state, and sleeping tabs are persisted in the same file and also survive restarts. Sleeping tabs retain their original color for when you wake them.
 
 ## Group link chips
 

@@ -66,6 +66,7 @@ class State:
         self.tab_names: dict[str, str] = {}  # tab_id → custom name
         self.tab_colors: dict[str, int] = {}  # tab_id → group color index (0-5)
         self.tab_collapsed: dict[str, bool] = {}  # tab_id → group collapsed state
+        self.tab_sleeping: dict[str, bool] = {}  # tab_id → visual-only sleep state
         self.theme: str = persistence.normalize_theme((persistence.load_settings() or {}).get("theme"))
         self.lock = threading.Lock()
         # Set True while a structural write (e.g. move-tab) is in flight to prevent
@@ -86,7 +87,7 @@ class State:
             restore = persistence.load_state()
         self.restore_snapshot: dict[str, Any] | None = restore
         self._restore_pane_count: int = persistence.count_panes(restore)
-        # Seed in-memory metadata from it so custom tab names/colors/collapsed
+        # Seed in-memory metadata from it so custom tab names/colors/collapsed/sleeping
         # state survive a daemon restart (correct when iTerm2 stayed up; harmlessly
         # ignored when its ids are stale after a full iTerm2 restart).
         if self.restore_snapshot:
@@ -95,20 +96,22 @@ class State:
             self.tab_collapsed = {
                 str(k): bool(v) for k, v in (self.restore_snapshot.get("tab_collapsed") or {}).items()
             }
+            self.tab_sleeping = {str(k): bool(v) for k, v in (self.restore_snapshot.get("tab_sleeping") or {}).items()}
 
     async def refresh(self) -> None:
         with self.lock:
             tab_names = dict(self.tab_names)
             tab_colors = dict(self.tab_colors)
             tab_collapsed = dict(self.tab_collapsed)
+            tab_sleeping = dict(self.tab_sleeping)
         try:
-            snap = await tree.build_tree(self.app, tab_names, tab_colors, tab_collapsed)
+            snap = await tree.build_tree(self.app, tab_names, tab_colors, tab_collapsed, tab_sleeping)
         except Exception as exc:
             log.exception("tree build failed: %s", exc)
             return
         with self.lock:
             self.snapshot = snap
-        self._maybe_persist(snap, tab_names, tab_colors, tab_collapsed)
+        self._maybe_persist(snap, tab_names, tab_colors, tab_collapsed, tab_sleeping)
 
     def _maybe_persist(
         self,
@@ -116,6 +119,7 @@ class State:
         tab_names: dict[str, str],
         tab_colors: dict[str, int],
         tab_collapsed: dict[str, bool],
+        tab_sleeping: dict[str, bool],
     ) -> None:
         """Persist workspace state to disk, debounced and only when it changed.
 
@@ -125,7 +129,7 @@ class State:
         if now - self._last_persist_ts < _PERSIST_DEBOUNCE_SECONDS:
             return
         try:
-            data = persistence.build_state(snap, tab_names, tab_colors, tab_collapsed)
+            data = persistence.build_state(snap, tab_names, tab_colors, tab_collapsed, tab_sleeping)
             sig = json.dumps(data, sort_keys=True)
         except Exception:
             log.exception("building persist state failed")
@@ -160,8 +164,9 @@ class State:
             tab_names = dict(self.tab_names)
             tab_colors = dict(self.tab_colors)
             tab_collapsed = dict(self.tab_collapsed)
+            tab_sleeping = dict(self.tab_sleeping)
         try:
-            data = persistence.build_state(snap, tab_names, tab_colors, tab_collapsed)
+            data = persistence.build_state(snap, tab_names, tab_colors, tab_collapsed, tab_sleeping)
         except Exception:
             log.exception("building shutdown-flush state failed")
             return
@@ -365,6 +370,9 @@ class _Handler(BaseHTTPRequestHandler):
                     return
                 color = body.get("color")
                 with self.state.lock:
+                    if self.state.tab_sleeping.get(tab_id):
+                        self._send_json({"ok": False, "error": "tab is sleeping; wake it first"})
+                        return
                     if color is None:
                         self.state.tab_colors.pop(tab_id, None)
                     else:
@@ -377,9 +385,35 @@ class _Handler(BaseHTTPRequestHandler):
                     self._send_json({"ok": False, "error": "no tab id"})
                     return
                 with self.state.lock:
+                    if self.state.tab_sleeping.get(tab_id):
+                        self._send_json({"ok": False, "error": "tab is sleeping; wake it first"})
+                        return
                     if body.get("collapsed"):
                         self.state.tab_collapsed[tab_id] = True
                     else:
+                        self.state.tab_collapsed.pop(tab_id, None)
+                self._send_json({"ok": True})
+                return
+            if path == "/api/set-tab-sleeping":
+                tab_id = body.get("id")
+                sleeping = body.get("sleeping")
+                if not isinstance(tab_id, str) or not tab_id:
+                    self._send_json({"ok": False, "error": "no tab id"})
+                    return
+                if not isinstance(sleeping, bool):
+                    self._send_json({"ok": False, "error": "sleeping must be a boolean"})
+                    return
+                with self.state.lock:
+                    if not any(
+                        t.get("id") == tab_id for w in self.state.snapshot.get("windows", []) for t in w.get("tabs", [])
+                    ):
+                        self._send_json({"ok": False, "error": f"no tab {tab_id}"})
+                        return
+                    if sleeping:
+                        self.state.tab_sleeping[tab_id] = True
+                        self.state.tab_collapsed[tab_id] = True
+                    else:
+                        self.state.tab_sleeping.pop(tab_id, None)
                         self.state.tab_collapsed.pop(tab_id, None)
                 self._send_json({"ok": True})
                 return

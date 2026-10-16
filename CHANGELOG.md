@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- Tab sleep toggle (a crescent-moon icon between rename and the color swatch) in both themes. Sleeping groups turn grey and collapse without stopping any processes; only the sleep button wakes them, restoring their original color and expanding their panes. The name/caret and color swatch are disabled while asleep. Sleep state survives daemon restarts and workspace restore.
 - Auto-discovered link chips on group headers. The daemon reads a status file (default `.cockpit.json`) from a group's panes' working directories and turns every URL-valued property into a chip labeled with the property name — nothing about PRs or Jira is hardcoded. A chip with a single URL opens it in your browser (`POST /api/open-url`); a property holding a list of URLs opens a popup listing them all. Non-URL properties are ignored, and groups with no status file show no chips. The status filename is configurable via `~/.config/iterm2-claude-cockpit/links.json` (`{ "file": "..." }`).
 - Two selectable panel themes, chosen from the Settings panel: **Classic** (the default) — a JetBrains Mono, terminal-styled look with flat accent-bar groups and a text-glyph status mark — and **Modern**, the redesigned alternative described below, with rounded tinted group blocks and a colored status dot. The choice persists across restarts (`GET`/`POST /api/settings`).
 - Per-tab group color coding: click a tab's swatch to cycle through 6 colors (red, green, yellow, purple, blue, brown), tinting the tab's block and every pane in it. Click a color chip in the window header to filter the panel down to that color (other groups dim but stay visible). Set programmatically via `POST /api/set-tab-color`; colors persist across restarts.
@@ -23,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Drag-and-drop tab reordering: drag a tab's header in the panel to reorder it within its window. The new order is applied in iTerm2 via `POST /api/move-tab`.
 
 ### Changed
+- Pane paths are now behind a folder icon beside the close (×) button in both themes, leaving more room for long pane names. Hover to see the full path and click to copy it, even on inactive panes, without changing focus. The icon is disabled when the working directory is unavailable.
 - **Redesigned the panel's visual language** in the Modern theme: new dark palette, Space Grotesk/IBM Plex Mono type (bundled locally, no external font requests), and reworked spacing/radii throughout the tree, action grid, and bottom nav.
 - Bottom nav (iTerm / Claude / Settings / Restore) is now a plain-text 4-column bar with an underline on whichever tool is open, replacing the icon+label buttons.
 - The `+ Tab` / `+ Window` / `⊢ Split` / `⊤ Split` action buttons are shorter, giving the scrolling group list more vertical room.

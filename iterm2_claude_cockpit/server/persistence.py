@@ -2,9 +2,9 @@
 
 The daemon holds everything in memory and dies when iTerm2 closes. This module
 serializes a minimal layout snapshot (windows → tabs → panes, each pane's cwd)
-plus the in-memory `tab_names`/`tab_colors`/`tab_collapsed` to disk, so a later
+plus the in-memory `tab_names`/`tab_colors`/`tab_collapsed`/`tab_sleeping` to disk, so a later
 "Restore workspace" action can recreate the layout with each pane back in its
-saved working directory, with custom names/colors/collapsed state intact.
+saved working directory, with custom names/colors/collapsed/sleeping state intact.
 
 Two files are kept, side by side:
 
@@ -58,6 +58,7 @@ def build_state(
     tab_names: dict[str, str],
     tab_colors: dict[str, int] | None = None,
     tab_collapsed: dict[str, bool] | None = None,
+    tab_sleeping: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     """Build the persistable layout dict from the live snapshot (no timestamp).
 
@@ -67,6 +68,7 @@ def build_state(
     """
     tab_colors = tab_colors or {}
     tab_collapsed = tab_collapsed or {}
+    tab_sleeping = tab_sleeping or {}
     windows: list[dict] = []
     live_tab_ids: set[str] = set()
     for window in snapshot.get("windows", []):
@@ -76,20 +78,21 @@ def build_state(
             panes: list[dict] = []
             for pane in tab.get("panes", []):
                 panes.append({"cwd": pane.get("cwd", "")})
-            # Persist name/color/collapsed keyed by the live tab id, which dies on
+            # Persist metadata keyed by the live tab id, which dies on
             # restart — these are what restore re-applies to the freshly created tab.
             tab_id = tab.get("id", "")
             tabs.append(
                 {
                     "name": tab_names.get(tab_id),
                     "color": tab_colors.get(tab_id),
-                    "collapsed": tab_collapsed.get(tab_id, False),
+                    "collapsed": tab_sleeping.get(tab_id, False) or tab_collapsed.get(tab_id, False),
+                    "sleeping": tab_sleeping.get(tab_id, False),
                     "panes": panes,
                 }
             )
         windows.append({"tabs": tabs})
 
-    # Prune tab_names/tab_colors/tab_collapsed to ids still present in the live
+    # Prune metadata to ids still present in the live
     # snapshot, so none of them can accumulate dead-tab keys forever across restarts.
     return {
         "version": STATE_VERSION,
@@ -97,6 +100,7 @@ def build_state(
         "tab_names": {k: v for k, v in tab_names.items() if str(k) in live_tab_ids},
         "tab_colors": {k: v for k, v in tab_colors.items() if str(k) in live_tab_ids},
         "tab_collapsed": {k: v for k, v in tab_collapsed.items() if str(k) in live_tab_ids},
+        "tab_sleeping": {k: v for k, v in tab_sleeping.items() if str(k) in live_tab_ids},
     }
 
 
