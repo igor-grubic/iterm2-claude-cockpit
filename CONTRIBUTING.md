@@ -59,7 +59,7 @@ Preview it with Node.js 20+:
 npm run demo
 ```
 
-Open `http://127.0.0.1:9877/demo`. Focus, color, collapse, sleep/wake, rename, theme switching, and restore preview work against in-memory sample data. Other actions return an explicit demo-only error. Stop the server with Ctrl-C; no state is persisted. Use `npm run demo -- --port 0` for an available port.
+Open `http://127.0.0.1:9877/demo`. Focus, color, collapse, sleep/wake, rename, theme switching, pane closing, and workspace restore work against in-memory sample data. Restore creates a new sample window with plain shell panes in the saved directories, leaving existing windows unchanged; it does not resume running commands. Other actions return an explicit demo-only error. Stop the server with Ctrl-C; no state is persisted. Use `npm run demo -- --port 0` for an available port.
 
 To regenerate the media, install the development-only tooling and FFmpeg (`brew install ffmpeg` on macOS):
 
@@ -71,7 +71,7 @@ npm run demo:record -- --update-readme
 
 The recorder starts its own isolated server and browser, walks `scripts/demo/scenes.json`, and produces a looping GIF plus an MP4 under `.playwright-mcp/demo/video/`. Captions are rendered in the browser; no image library is needed. `--update-readme` explicitly copies the GIF to `docs/demo.gif`; without it, the checked-in media is left untouched. No production daemon code or runtime dependencies are changed.
 
-The walkthrough covers pane focus, group colors, collapse/expand, copying an inactive pane's path, sleep/wake with the moon icon, both themes, and restore preview. Update its scenes when the UI changes. Captures use a fixed 1000×760 viewport and synthetic clipboard writes so recording does not overwrite your clipboard.
+The walkthrough stays in Classic and covers pane focus, group colors, collapse/expand, copying an inactive pane's path, sleep/wake with the moon icon, and a before-and-after restore demonstration. It closes a sample pane, shows the missing pane beside the saved-layout counts, holds the restore confirmation, and recreates the saved workspace as shells in a new sample window. The before/after callout is part of the demo framing, not the production panel. Update the scenes when the UI changes. Captures use a fixed 1000×760 viewport and synthetic clipboard writes so recording does not overwrite your clipboard.
 
 To encode existing Playwright MCP screenshots instead of recapturing:
 

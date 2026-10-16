@@ -56,34 +56,45 @@
     "waitFor": ".group-classic:nth-child(2) .group-sleep-btn[aria-pressed='false']:not(:disabled)"
   },
   {
-    "name": "10-settings",
-    "caption": "Choose the cockpit's look in Settings.",
-    "actions": [{"type": "click", "selector": "#btn-settings"}],
-    "waitFor": ".settings-theme-btn.active:text-is('Classic')"
+    "name": "10-close-pane",
+    "caption": "Close a sample pane to demonstrate workspace recovery.",
+    "seconds": 1.2,
+    "actions": [
+      {"type": "click", "selector": ".group-classic:nth-child(1) .pane-row-classic:nth-child(3)"},
+      {"type": "click", "selector": ".group-classic:nth-child(1) .pane-row-classic:nth-child(3) .pane-close-btn"}
+    ],
+    "waitFor": ".confirm-popup:not(.restore-confirm-popup)"
   },
   {
-    "name": "11-modern",
-    "caption": "Classic or Modern. The same controls, a different feel.",
-    "actions": [{"type": "click", "selector": ".settings-theme-btn:text-is('Modern')"}],
-    "waitFor": "body[data-theme='2a'] .settings-theme-btn.active:text-is('Modern')"
+    "name": "11-before-restore",
+    "caption": "The test pane is gone. Its layout and folder are still saved.",
+    "seconds": 2.8,
+    "actions": [{"type": "click", "selector": ".confirm-popup .confirm-yes"}],
+    "waitHidden": ".group-classic:nth-child(1) .pane-row-classic:nth-child(3)"
   },
   {
-    "name": "12-modern-overview",
-    "caption": "Claude panes stay yellow. Your active pane stays obvious.",
-    "actions": [{"type": "press", "selector": "body", "key": "Escape"}],
-    "waitFor": ".group .pane-row.active"
-  },
-  {
-    "name": "13-restore-preview",
-    "caption": "Preview your saved workspace before restoring it.",
+    "name": "12-restore-preview",
+    "caption": "Restore shows exactly what the saved workspace will recreate.",
+    "seconds": 3.2,
     "actions": [{"type": "click", "selector": "#btn-restore"}],
     "waitFor": ".restore-confirm-popup"
+  },
+  {
+    "name": "13-restored",
+    "caption": "Five panes recreated in a new window, each in its saved folder.",
+    "seconds": 3.8,
+    "actions": [
+      {"type": "click", "selector": ".restore-confirm-popup .confirm-yes"},
+      {"type": "click", "selector": ".window-block:first-child .group-classic:nth-child(1) .pane-row-classic:nth-child(3)"}
+    ],
+    "waitFor": ".window-block:first-child .group-classic:nth-child(1) .pane-row-classic:nth-child(3).active"
   },
   {
     "name": "14-final",
     "caption": "Keep every Claude session within reach.",
     "seconds": 2.4,
-    "actions": [{"type": "press", "selector": "body", "key": "Escape"}],
-    "waitFor": ".group .pane-row.active"
+    "actions": [],
+    "waitFor": ".window-block:first-child .pane-row-classic.active",
+    "waitHidden": ".toast.show"
   }
 ]

@@ -80,10 +80,75 @@ test("collapse, theme changes, and reset are repeatable", async () => {
   assert.deepEqual(await get("/api/restore-preview"), { ok: true, windows: 1, tabs: 3, panes: 5 });
 });
 
+test("closing a pane preserves the saved layout and selects a remaining pane", async () => {
+  await post("/api/focus", { kind: "session", id: "api-tests" });
+  assert.equal((await post("/api/close-session", { id: "api-tests" })).ok, true);
+  const state = await get("/demo/state");
+  assert.equal(state.active.id, "api-claude");
+  assert.equal(state.restore.closedPane, "Tests \u00b7 api-service");
+  assert.equal(state.restore.current.panes, 4);
+  assert.equal(state.restore.saved.panes, 5);
+  assert.equal(state.restore.restored, 0);
+  assert.deepEqual(await get("/api/restore-preview"), { ok: true, windows: 1, tabs: 3, panes: 5 });
+  await post("/api/close-session", { id: "api-claude" });
+  const snapshot = await get("/api/tree");
+  assert.equal(snapshot.windows[0].tabs.length, 2);
+  assert.match(snapshot.windows[0].title, /2 tabs$/);
+  assert.equal((await get("/demo/state")).active.id, "web-claude");
+});
+
+test("restore creates fresh shell panes in new windows without replacing existing panes", async () => {
+  const saved = await get("/api/tree");
+  await post("/api/set-tab-color", { id: "web", color: 5 });
+  await post("/api/close-session", { id: "api-tests" });
+  const existing = (await get("/api/tree")).windows[0];
+  assert.deepEqual(await post("/api/restore", {}), { ok: true, restored: 5 });
+  const snapshot = await get("/api/tree");
+  assert.equal(snapshot.windows.length, 2);
+  existing.active = false;
+  for (const tab of existing.tabs) {
+    tab.active = false;
+    for (const pane of tab.panes) pane.active = false;
+  }
+  assert.deepEqual(snapshot.windows[1], existing);
+  const restoredPanes = snapshot.windows[0].tabs.flatMap(tab => tab.panes);
+  assert.equal(restoredPanes.length, 5);
+  assert.deepEqual(restoredPanes.map(pane => pane.cwd), saved.windows[0].tabs.flatMap(tab => tab.panes).map(pane => pane.cwd));
+  assert.ok(restoredPanes.every(pane => pane.job === "zsh" && !pane.claude && pane.id.startsWith("restored-1-")));
+  await post("/api/focus", { kind: "session", id: restoredPanes[1].id });
+  const state = await get("/demo/state");
+  assert.equal(state.active.id, restoredPanes[1].id);
+  assert.deepEqual(state.lines, ["$ cd /Users/demo/code/api-service", "", "$ pwd", "/Users/demo/code/api-service", "", "$ "]);
+  assert.equal(state.restore.restored, 5);
+  assert.deepEqual(await post("/api/restore", {}), { ok: true, restored: 5 });
+  const again = await get("/api/tree");
+  const paneIds = again.windows.flatMap(window => window.tabs).flatMap(tab => tab.panes).map(pane => pane.id);
+  assert.equal(again.windows.length, 3);
+  assert.equal(new Set(paneIds).size, paneIds.length);
+  assert.equal(paneIds.length, 14);
+});
+
+test("an empty demo workspace can be restored and reset", async () => {
+  const panes = (await get("/api/tree")).windows.flatMap(window => window.tabs).flatMap(tab => tab.panes);
+  for (const pane of panes) await post("/api/close-session", { id: pane.id });
+  assert.deepEqual((await get("/api/tree")).windows, []);
+  assert.equal((await get("/demo/state")).active, null);
+  assert.deepEqual((await get("/demo/state")).lines, []);
+  assert.deepEqual(await post("/api/restore", {}), { ok: true, restored: 5 });
+  assert.equal((await get("/demo/state")).restore.current.panes, 5);
+  await post("/demo/reset", {});
+  const state = await get("/demo/state");
+  assert.equal(state.active.id, "api-claude");
+  assert.equal(state.restore.closedPane, null);
+  assert.equal(state.restore.restored, 0);
+  assert.equal(state.restore.current.windows, 1);
+});
+
 test("invalid input never mutates demo state", async () => {
   const before = await get("/api/tree");
   for (const [path, body] of [
     ["/api/focus", { kind: "session", id: "missing" }],
+    ["/api/close-session", { id: "missing" }],
     ["/api/settings", { theme: "missing" }],
     ["/api/set-tab-color", { id: "api", color: true }],
     ["/api/set-tab-color", { id: "api", color: 6 }],
@@ -100,7 +165,7 @@ test("invalid input never mutates demo state", async () => {
 
 test("unsupported actions fail explicitly rather than pretending to control iTerm2", async () => {
   const before = await get("/api/tree");
-  for (const path of ["/api/restore", "/api/new-tab", "/api/new-window", "/api/close-session", "/api/open-url"]) {
+  for (const path of ["/api/new-tab", "/api/new-window", "/api/open-url"]) {
     const result = await post(path, { id: "api-claude" }, 400);
     assert.equal(result.ok, false);
     assert.match(result.error, /not available in the demo/);
@@ -130,4 +195,11 @@ test("walkthrough scenes have unique filenames, captions, and supported actions"
     assert.ok((scene.seconds ?? 1.7) > 0);
     assert.ok(scene.actions.every(action => ["click", "press"].includes(action.type) && action.selector));
   }
+  assert.ok(scenes.every(scene => scene.actions.every(action => !/settings|theme/.test(action.selector))));
+  const before = scenes.findIndex(scene => scene.name === "11-before-restore");
+  const preview = scenes.findIndex(scene => scene.name === "12-restore-preview");
+  const restored = scenes.findIndex(scene => scene.name === "13-restored");
+  assert.ok(before > 0 && before < preview && preview < restored);
+  assert.ok(scenes[preview].seconds >= 3);
+  assert.ok(scenes[restored].seconds >= 3);
 });

@@ -101,6 +101,11 @@ function initialSnapshot() {
   };
 }
 
+function summarize(snapshot) {
+  const tabs = snapshot.windows.flatMap(window => window.tabs);
+  return { windows: snapshot.windows.length, tabs: tabs.length, panes: tabs.flatMap(tab => tab.panes).length };
+}
+
 const files = new Map([
   ["/", [join(webview, "index.html"), "text/html"]],
   ["/demo", [join(directory, "index.html"), "text/html"]],
@@ -132,8 +137,25 @@ async function readBody(request) {
 
 export async function createDemoServer({ port = 0 } = {}) {
   let snapshot = initialSnapshot();
+  const savedSnapshot = initialSnapshot();
+  let terminalOutputs = new Map(Object.entries(outputs));
+  let closedPane = null;
+  let restoreRuns = 0;
+  let restored = 0;
   let theme = "1a";
   const allTabs = () => snapshot.windows.flatMap(window => window.tabs);
+  function focusSession(id) {
+    const targetTab = allTabs().find(tab => tab.panes.some(session => session.id === id));
+    if (!targetTab) return false;
+    for (const window of snapshot.windows) {
+      window.active = window.tabs.includes(targetTab);
+      for (const tab of window.tabs) {
+        tab.active = tab === targetTab;
+        for (const session of tab.panes) session.active = session.id === id;
+      }
+    }
+    return true;
+  }
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://127.0.0.1");
@@ -146,10 +168,13 @@ export async function createDemoServer({ port = 0 } = {}) {
         if (path === "/api/tree") return json(response, snapshot);
         if (path === "/api/settings") return json(response, { theme });
         if (path === "/api/about") return json(response, { version: "demo" });
-        if (path === "/api/restore-preview") return json(response, { ok: true, windows: 1, tabs: 3, panes: 5 });
+        if (path === "/api/restore-preview") return json(response, { ok: true, ...summarize(savedSnapshot) });
         if (path === "/demo/state") {
-          const active = allTabs().flatMap(tab => tab.panes).find(session => session.active);
-          return json(response, { active, lines: outputs[active.id], theme });
+          const active = allTabs().flatMap(tab => tab.panes).find(session => session.active) ?? null;
+          return json(response, {
+            active, lines: active ? terminalOutputs.get(active.id) : [], theme,
+            restore: { closedPane, restored, saved: summarize(savedSnapshot), current: summarize(snapshot) },
+          });
         }
         const file = files.get(path);
         if (file) {
@@ -167,8 +192,52 @@ export async function createDemoServer({ port = 0 } = {}) {
       const body = await readBody(request);
       if (path === "/demo/reset") {
         snapshot = initialSnapshot();
+        terminalOutputs = new Map(Object.entries(outputs));
+        closedPane = null;
+        restoreRuns = 0;
+        restored = 0;
         theme = "1a";
         return json(response, { ok: true });
+      }
+      if (path === "/api/close-session") {
+        const tab = allTabs().find(item => item.panes.some(session => session.id === body.id));
+        if (!tab) return json(response, { ok: false, error: "Unknown demo pane" }, 400);
+        const session = tab.panes.find(item => item.id === body.id);
+        closedPane = session.session_name;
+        restored = 0;
+        tab.panes = tab.panes.filter(item => item !== session);
+        terminalOutputs.delete(session.id);
+        for (const window of snapshot.windows) {
+          window.tabs = window.tabs.filter(item => item.panes.length > 0);
+          window.title = `${window.title.split(" \u00b7 ")[0]} \u00b7 ${window.tabs.length} tabs`;
+        }
+        snapshot.windows = snapshot.windows.filter(window => window.tabs.length > 0);
+        const remaining = allTabs().flatMap(item => item.panes);
+        if (session.active && remaining.length) focusSession(remaining[0].id);
+        return json(response, { ok: true });
+      }
+      if (path === "/api/restore") {
+        restoreRuns += 1;
+        const windows = structuredClone(savedSnapshot.windows);
+        for (const window of windows) {
+          window.id = `restored-${restoreRuns}-${window.id}`;
+          window.title = `Window ${restoreRuns + 1} \u00b7 ${window.tabs.length} tabs`;
+          for (const tab of window.tabs) {
+            tab.id = `restored-${restoreRuns}-${tab.id}`;
+            for (const session of tab.panes) {
+              session.id = `restored-${restoreRuns}-${session.id}`;
+              session.session_name = `Shell \u00b7 ${session.title}`;
+              session.job = "zsh";
+              session.claude = false;
+              session.last_line = "$ ";
+              terminalOutputs.set(session.id, [`$ cd ${session.cwd}`, "", "$ pwd", session.cwd, "", "$ "]);
+            }
+          }
+        }
+        snapshot.windows.unshift(...windows);
+        restored = summarize({ windows }).panes;
+        focusSession(windows[0].tabs[0].panes[0].id);
+        return json(response, { ok: true, restored });
       }
       if (path === "/api/settings") {
         if (!["1a", "2a"].includes(body.theme)) return json(response, { ok: false, error: "Unknown demo theme" }, 400);
@@ -176,12 +245,7 @@ export async function createDemoServer({ port = 0 } = {}) {
         return json(response, { ok: true, theme });
       }
       if (path === "/api/focus") {
-        const targetTab = allTabs().find(tab => tab.panes.some(session => session.id === body.id));
-        if (body.kind !== "session" || !targetTab) return json(response, { ok: false, error: "Unknown demo pane" }, 400);
-        for (const tab of allTabs()) {
-          tab.active = tab === targetTab;
-          for (const session of tab.panes) session.active = session.id === body.id;
-        }
+        if (body.kind !== "session" || !focusSession(body.id)) return json(response, { ok: false, error: "Unknown demo pane" }, 400);
         return json(response, { ok: true });
       }
       if (["/api/set-tab-color", "/api/set-tab-collapsed", "/api/set-tab-sleeping", "/api/rename-tab"].includes(path)) {
