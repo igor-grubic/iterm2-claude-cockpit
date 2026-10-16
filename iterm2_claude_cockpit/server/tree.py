@@ -97,6 +97,7 @@ async def _tab_node(
     tab_colors: dict[str, int] | None = None,
     tab_collapsed: dict[str, bool] | None = None,
     status_file: str = "",
+    tab_sleeping: dict[str, bool] | None = None,
 ) -> dict:
     panes: list[dict] = []
     for session in tab.sessions:
@@ -104,6 +105,7 @@ async def _tab_node(
 
     tab_id = str(tab.tab_id)
     title = (tab_names or {}).get(tab_id) or f"Tab {tab_idx + 1}"
+    sleeping = bool((tab_sleeping or {}).get(tab_id, False))
 
     # Link chips auto-discovered from a status file in the panes' cwds (small, mtime-cached
     # reads — see links.py). A workspace shared by several panes yields one chip set.
@@ -116,7 +118,8 @@ async def _tab_node(
         "active": str(tab.tab_id) == str(active_tab_id) if active_tab_id is not None else False,
         "panes": panes,
         "color": (tab_colors or {}).get(tab_id),
-        "collapsed": bool((tab_collapsed or {}).get(tab_id, False)),
+        "collapsed": sleeping or bool((tab_collapsed or {}).get(tab_id, False)),
+        "sleeping": sleeping,
         "links": tab_links,
     }
 
@@ -126,6 +129,7 @@ async def build_tree(
     tab_names: dict[str, str] | None = None,
     tab_colors: dict[str, int] | None = None,
     tab_collapsed: dict[str, bool] | None = None,
+    tab_sleeping: dict[str, bool] | None = None,
 ) -> dict:
     """Walk the App → Window → Tab → Session tree and return a JSON snapshot."""
     active_window = app.current_terminal_window
@@ -160,6 +164,7 @@ async def build_tree(
                     tab_colors,
                     tab_collapsed,
                     status_file,
+                    tab_sleeping,
                 )
             )
 

@@ -15,6 +15,7 @@
   // The active-pane accent for uncolored groups — matches --accent in styles.css. Colored
   // groups use their own (much stronger) color for the active-pane highlight instead.
   const ACTIVE_FALLBACK = "#4ea1ff";
+  const SLEEP_COLOR = "#777f88";
 
   // Per-theme color palette (index 0-5, cycled by clicking a swatch) plus the neutral/label/
   // title colors that go with it. Selectable in Settings; "1a" is the default.
@@ -56,6 +57,8 @@
   // the POST persists the change server-side in the background.
   const colorOverrides = new Map(); // tab id -> color index | null
   const collapsedOverrides = new Map(); // tab id -> bool
+  const sleepingOverrides = new Map(); // tab id -> bool
+  const pendingTabRequests = new Set(); // serialize color/collapse/sleep changes per tab
 
   // Same idea for focus: clicking a pane used to just fire the POST and wait for a poll
   // to notice — up to ~500ms of visible lag before the highlight moved. This makes the
@@ -202,19 +205,71 @@
   }
 
   function cycleColor(t) {
+    if (isTabSleeping(t) || pendingTabRequests.has(t.id)) return;
     const current = colorOverrides.has(t.id) ? colorOverrides.get(t.id) : (t.color ?? null);
     const next = nextColor(current);
-    colorOverrides.set(t.id, next);
-    postAction("/api/set-tab-color", { id: t.id, color: next });
-    if (lastSnapshot) renderTree(lastSnapshot);
+    updateTab(t, "/api/set-tab-color", { color: next }, [[colorOverrides, next]]);
   }
 
   function toggleCollapse(t) {
+    if (isTabSleeping(t) || pendingTabRequests.has(t.id)) return;
     const current = collapsedOverrides.has(t.id) ? collapsedOverrides.get(t.id) : Boolean(t.collapsed);
     const next = !current;
-    collapsedOverrides.set(t.id, next);
-    postAction("/api/set-tab-collapsed", { id: t.id, collapsed: next });
+    updateTab(t, "/api/set-tab-collapsed", { collapsed: next }, [[collapsedOverrides, next]]);
+  }
+
+  function isTabSleeping(t) {
+    return sleepingOverrides.has(t.id) ? sleepingOverrides.get(t.id) : Boolean(t.sleeping);
+  }
+
+  function toggleSleep(t) {
+    if (pendingTabRequests.has(t.id)) return;
+    const next = !isTabSleeping(t);
+    updateTab(t, "/api/set-tab-sleeping", { sleeping: next }, [[sleepingOverrides, next], [collapsedOverrides, next]]);
+  }
+
+  async function updateTab(t, path, body, changes) {
+    const previous = changes.map(([map, value]) => {
+      const entry = { map, had: map.has(t.id), value: map.get(t.id) };
+      map.set(t.id, value);
+      return entry;
+    });
+    pendingTabRequests.add(t.id);
     if (lastSnapshot) renderTree(lastSnapshot);
+
+    const ok = await postAction(path, { id: t.id, ...body });
+    pendingTabRequests.delete(t.id);
+    if (!ok) {
+      for (const { map, had, value } of previous) {
+        if (had) map.set(t.id, value);
+        else map.delete(t.id);
+      }
+    }
+    if (lastSnapshot) renderTree(lastSnapshot);
+    if (ok) pollOnce();
+  }
+
+  function renderSleepButton(t) {
+    const sleeping = isTabSleeping(t);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "group-sleep-btn";
+    btn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7Z"/></svg>';
+    btn.title = sleeping ? "Wake tab" : "Put tab to sleep";
+    btn.setAttribute("aria-label", btn.title);
+    btn.setAttribute("aria-pressed", String(sleeping));
+    btn.disabled = pendingTabRequests.has(t.id);
+    btn.addEventListener("click", (ev) => { ev.stopPropagation(); toggleSleep(t); });
+    return btn;
+  }
+
+  function disableTabControls(header, t) {
+    const sleeping = isTabSleeping(t);
+    if (!sleeping && !pendingTabRequests.has(t.id)) return;
+    for (const el of header.querySelectorAll(".group-name, .group-count, .group-caret, .group-caret-classic, .group-swatch, .group-swatch-classic")) {
+      el.setAttribute("aria-disabled", "true");
+      el.title = sleeping ? "Wake the tab with the sleep button first" : "Saving tab changes...";
+    }
   }
 
   // Shared by both theme skins — a group header is draggable to reorder its tab within the
@@ -357,8 +412,9 @@
     wrap.className = "group";
 
     const effectiveColor = colorOverrides.has(t.id) ? colorOverrides.get(t.id) : (t.color ?? null);
-    const effectiveCollapsed = collapsedOverrides.has(t.id) ? collapsedOverrides.get(t.id) : Boolean(t.collapsed);
-    const col = effectiveColor === null || effectiveColor === undefined ? null : th.colors[effectiveColor];
+    const sleeping = isTabSleeping(t);
+    const effectiveCollapsed = sleeping || (collapsedOverrides.has(t.id) ? collapsedOverrides.get(t.id) : Boolean(t.collapsed));
+    const col = sleeping ? SLEEP_COLOR : (effectiveColor === null || effectiveColor === undefined ? null : th.colors[effectiveColor]);
     const dim = filterColor !== null && effectiveColor !== filterColor;
 
     wrap.style.background = col ? rgba(col, dim ? 0.02 : 0.05) : "rgba(0,0,0,.15)";
@@ -404,7 +460,8 @@
 
     header.append(name);
     if ((t.links || []).length) header.append(renderLinkChips(t));
-    header.append(count, caret, editBtn, swatch);
+    header.append(count, caret, editBtn, renderSleepButton(t), swatch);
+    disableTabControls(header, t);
     wrap.appendChild(header);
 
     if (!effectiveCollapsed) {
@@ -449,18 +506,7 @@
     title.textContent = p.session_name || p.title || p.id;
     title.style.color = dim ? th.labelDim : (isClaude ? CLAUDE_YELLOW : (active ? th.titleOn : th.titleDim));
 
-    const path = document.createElement("span");
-    path.className = "pane-path";
-    path.textContent = p.cwd || p.title || "";
-    if (active && p.cwd) {
-      path.title = "Click to copy";
-      path.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        copyToClipboard(p.cwd).then((ok) => toast(ok ? "copied cwd" : "copy failed", ok));
-      });
-    }
-
-    main.append(title, path);
+    main.append(title);
 
     const closeBtn = document.createElement("span");
     closeBtn.className = "pane-close-btn";
@@ -479,7 +525,7 @@
       status.style.color = "#6b727c";
       children.push(status);
     }
-    children.push(closeBtn);
+    children.push(renderPathButton(p), closeBtn);
     row.append(...children);
     row.addEventListener("click", () => focusNode(p.kind, p.id));
     return row;
@@ -496,8 +542,9 @@
     wrap.className = "group-classic";
 
     const effectiveColor = colorOverrides.has(t.id) ? colorOverrides.get(t.id) : (t.color ?? null);
-    const effectiveCollapsed = collapsedOverrides.has(t.id) ? collapsedOverrides.get(t.id) : Boolean(t.collapsed);
-    const col = effectiveColor === null || effectiveColor === undefined ? null : th.colors[effectiveColor];
+    const sleeping = isTabSleeping(t);
+    const effectiveCollapsed = sleeping || (collapsedOverrides.has(t.id) ? collapsedOverrides.get(t.id) : Boolean(t.collapsed));
+    const col = sleeping ? SLEEP_COLOR : (effectiveColor === null || effectiveColor === undefined ? null : th.colors[effectiveColor]);
     const dim = filterColor !== null && effectiveColor !== filterColor;
 
     wrap.style.borderLeft = `3px solid ${col ? (dim ? rgba(col, 0.25) : col) : th.none}`;
@@ -536,7 +583,8 @@
 
     header.append(caret, name);
     if ((t.links || []).length) header.append(renderLinkChips(t));
-    header.append(editBtn, swatch);
+    header.append(editBtn, renderSleepButton(t), swatch);
+    disableTabControls(header, t);
     wrap.appendChild(header);
 
     if (!effectiveCollapsed) {
@@ -578,17 +626,6 @@
     title.textContent = p.session_name || p.title || p.id;
     title.style.color = dim ? th.labelDim : (isClaude ? CLAUDE_YELLOW : (active ? th.titleOn : th.titleDim));
 
-    const path = document.createElement("span");
-    path.className = "pane-path-classic";
-    path.textContent = p.cwd || p.title || "";
-    if (active && p.cwd) {
-      path.title = "Click to copy";
-      path.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        copyToClipboard(p.cwd).then((ok) => toast(ok ? "copied cwd" : "copy failed", ok));
-      });
-    }
-
     const closeBtn = document.createElement("span");
     closeBtn.className = "pane-close-btn";
     closeBtn.textContent = "×";
@@ -598,9 +635,24 @@
       showConfirmPopup(closeBtn, () => postAction("/api/close-session", { id: p.id }));
     });
 
-    row.append(mark, title, path, closeBtn);
+    row.append(mark, title, renderPathButton(p), closeBtn);
     row.addEventListener("click", () => focusNode(p.kind, p.id));
     return row;
+  }
+
+  function renderPathButton(p) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pane-path-btn";
+    btn.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M1.5 4V3h5l1.5 2h6.5v8h-13V4Z"/></svg>';
+    btn.title = p.cwd ? `${p.cwd}\nClick to copy working directory` : "Working directory unavailable";
+    btn.setAttribute("aria-label", p.cwd ? `Copy working directory: ${p.cwd}` : btn.title);
+    btn.disabled = !p.cwd;
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (p.cwd) copyToClipboard(p.cwd).then((ok) => toast(ok ? "copied cwd" : "copy failed", ok));
+    });
+    return btn;
   }
 
   async function postAction(path, body) {
@@ -611,9 +663,14 @@
         body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!data.ok) toast(data.error || path + " failed", false);
+      if (!res.ok || !data.ok) {
+        toast(data.error || path + " failed", false);
+        return false;
+      }
+      return true;
     } catch (e) {
       toast(path + " error: " + e, false);
+      return false;
     }
   }
 
@@ -985,6 +1042,14 @@
       setStatus("live", "ok");
       if (activeOverride !== null && snapshotConfirmsActive(data, activeOverride)) {
         activeOverride = null;
+      }
+      for (const w of data.windows || []) {
+        for (const t of w.tabs || []) {
+          if (pendingTabRequests.has(t.id)) continue;
+          for (const [map, value] of [[colorOverrides, t.color ?? null], [collapsedOverrides, Boolean(t.collapsed)], [sleepingOverrides, Boolean(t.sleeping)]]) {
+            if (map.has(t.id) && map.get(t.id) === value) map.delete(t.id);
+          }
+        }
       }
       const json = JSON.stringify(data);
       if (json !== lastSnapshotJson) {

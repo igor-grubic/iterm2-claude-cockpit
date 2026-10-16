@@ -6,6 +6,9 @@ Run with: python -m unittest discover -s tests
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from iterm2_claude_cockpit.server import persistence
 
@@ -36,18 +39,22 @@ class BuildStateTest(unittest.TestCase):
         data = persistence.build_state(_snapshot("t1"), {"t1": "custom"})
         self.assertEqual(data["tab_colors"], {})
         self.assertEqual(data["tab_collapsed"], {})
+        self.assertEqual(data["tab_sleeping"], {})
+        self.assertFalse(data["windows"][0]["tabs"][0]["sleeping"])
 
     def test_prunes_dead_tab_ids(self) -> None:
-        # t1 is live, t2 no longer exists in the snapshot — must be dropped from all three.
+        # t1 is live, t2 no longer exists in the snapshot — must be dropped from all metadata.
         data = persistence.build_state(
             _snapshot("t1"),
             tab_names={"t1": "keep", "t2": "gone"},
             tab_colors={"t1": 2, "t2": 5},
             tab_collapsed={"t1": True, "t2": False},
+            tab_sleeping={"t1": True, "t2": True},
         )
         self.assertEqual(data["tab_names"], {"t1": "keep"})
         self.assertEqual(data["tab_colors"], {"t1": 2})
         self.assertEqual(data["tab_collapsed"], {"t1": True})
+        self.assertEqual(data["tab_sleeping"], {"t1": True})
 
     def test_embeds_color_and_collapsed_per_tab(self) -> None:
         # restore_workspace reads color/collapsed off each tab entry directly (not the
@@ -62,6 +69,58 @@ class BuildStateTest(unittest.TestCase):
         tab = data["windows"][0]["tabs"][0]
         self.assertEqual(tab["color"], 3)
         self.assertTrue(tab["collapsed"])
+
+    def test_sleep_preserves_original_color_and_forces_collapsed(self) -> None:
+        for color in (None, 0, 5):
+            with self.subTest(color=color):
+                data = persistence.build_state(
+                    _snapshot("t1"),
+                    tab_names={},
+                    tab_colors={} if color is None else {"t1": color},
+                    tab_sleeping={"t1": True},
+                )
+                tab = data["windows"][0]["tabs"][0]
+                self.assertEqual(tab["color"], color)
+                self.assertTrue(tab["sleeping"])
+                self.assertTrue(tab["collapsed"])
+                self.assertEqual(data["tab_sleeping"], {"t1": True})
+                self.assertEqual(tab["panes"], [{"cwd": "/x"}])
+
+    def test_awake_tab_keeps_independent_collapsed_state(self) -> None:
+        data = persistence.build_state(
+            _snapshot("t1", "t2"),
+            tab_names={},
+            tab_collapsed={"t1": True},
+            tab_sleeping={"t1": False},
+        )
+        first, second = data["windows"][0]["tabs"]
+        self.assertFalse(first["sleeping"])
+        self.assertTrue(first["collapsed"])
+        self.assertFalse(second["sleeping"])
+        self.assertFalse(second["collapsed"])
+
+    def test_sleep_metadata_round_trips_through_disk(self) -> None:
+        data = persistence.build_state(
+            _snapshot("t1"),
+            tab_names={"t1": "Paused work"},
+            tab_colors={"t1": 0},
+            tab_collapsed={"t1": True},
+            tab_sleeping={"t1": True},
+        )
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                patch.object(persistence, "STATE_DIR", root),
+                patch.object(persistence, "STATE_PATH", root / "state.json"),
+                patch.object(persistence, "RESTORE_PATH", root / "restore.json"),
+            ):
+                persistence.save_state(data)
+                persistence.save_restore(data)
+                for loaded in (persistence.load_state(), persistence.load_restore()):
+                    self.assertIsNotNone(loaded)
+                    self.assertEqual(loaded["tab_sleeping"], {"t1": True})
+                    self.assertEqual(loaded["tab_colors"], {"t1": 0})
+                    self.assertEqual(loaded["windows"], data["windows"])
 
 
 class NormalizeThemeTest(unittest.TestCase):

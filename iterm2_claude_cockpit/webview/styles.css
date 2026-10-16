@@ -260,6 +260,27 @@ main {
 }
 .group-edit-btn:hover { background: var(--btn-hover); border-color: #555562; color: var(--fg); }
 
+button.group-sleep-btn,
+button.pane-path-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border-radius: 5px;
+  color: var(--fg-muted);
+}
+
+.group-sleep-btn[aria-pressed="true"] { background: #363b42; border-color: #777f88; }
+.group-sleep-btn:disabled,
+.pane-path-btn:disabled { opacity: 0.5; cursor: default; }
+.group-sleep-btn svg,
+.pane-path-btn svg { pointer-events: none; }
+.group-header [aria-disabled="true"],
+.group-classic-header [aria-disabled="true"] { opacity: 0.5; cursor: default; }
+
 /* Config-driven link chips (PR, Jira, …) on a group header. Color/border/background are
    set inline from the provider's color; these are the shared shape + fallback tones. */
 .link-chips {
@@ -423,18 +444,6 @@ main {
   white-space: nowrap;
 }
 
-.pane-path {
-  font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
-  font-size: 11px;
-  color: var(--fg-path);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: default;
-}
-
-.pane-row.active .pane-path { cursor: pointer; }
-
 .pane-status {
   flex-shrink: 0;
   font-size: 10px;
@@ -459,11 +468,10 @@ main {
 }
 .pane-close-btn:hover { background: #2e1414; border-color: var(--clr-close); }
 
-/* ── "1a" pane rows — a glyph mark instead of a dot, no status word, path
-   inline-right instead of stacked under the title ──────────────────────── */
+/* ── "1a" pane rows — a glyph mark instead of a dot, no status word ─────── */
 .pane-row-classic {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   padding: 6px 12px 6px 13px;
   margin-left: -3px; /* matches the active border-left width, so it sits flush on the spine */
@@ -480,25 +488,13 @@ main {
 
 .pane-title-classic {
   /* color is set inline per-row in app.js (depends on active + filter-dim state) */
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.pane-path-classic {
-  flex: 1;
-  min-width: 0;
-  text-align: right;
-  font-size: 10.5px;
-  color: var(--fg-path);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: default;
-}
-
-.pane-row-classic.active .pane-path-classic { cursor: pointer; }
 
 /* ── confirm popup ──────────────────────────────────────────────── */
 .confirm-popup {
