@@ -18,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Tab names now persist across restarts. The workspace layout is saved under `~/.config/iterm2-claude-cockpit/` and is the basis for the Restore button. Two files are kept: `state.json` mirrors the current layout, while `restore.json` holds the last-good layout Restore recreates — so the single-window layout iTerm2 relaunches with can't overwrite your saved workspace before you restore it.
 - `install.sh` and `uninstall.sh` at the repo root. `install.sh` validates iTerm2 + the bundled Python, cleans up any stale install (with consent), and places the AutoLaunch symlink. Idempotent; supports `--force` and `--dry-run`.
 - Settings button (⚙) in the footer icon row — opens a panel showing the plugin version and the theme switcher above.
-- On the active pane, click its path to copy the working directory to the clipboard; hover any pane for a tooltip with its job, working directory, and last output line.
+- Hover any pane for a tooltip with its job, working directory, and last output line.
 - Editable tab names: click the ✎ rename button next to a group's name; type a new name and press Enter to save. Custom names persist until the tab or window is closed. Names are also settable programmatically via `POST /api/rename-tab`.
 - `tty` field on session snapshot nodes — the controlling TTY path (e.g. `/dev/ttys003`).
 - Drag-and-drop tab reordering: drag a tab's header in the panel to reorder it within its window. The new order is applied in iTerm2 via `POST /api/move-tab`.
