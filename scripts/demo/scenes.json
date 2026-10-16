@@ -1,0 +1,89 @@
+[
+  {
+    "name": "01-overview",
+    "caption": "Every window, tab, and pane. One compact cockpit.",
+    "seconds": 2.4,
+    "actions": []
+  },
+  {
+    "name": "02-focus-tests",
+    "caption": "Jump from Claude to its test runner with one click.",
+    "actions": [{"type": "click", "selector": ".group-classic:nth-child(1) .pane-row-classic:nth-child(3)"}],
+    "waitFor": ".group-classic:nth-child(1) .pane-row-classic:nth-child(3).active"
+  },
+  {
+    "name": "03-focus-claude",
+    "caption": "Switch projects without searching through terminal tabs.",
+    "actions": [{"type": "click", "selector": ".group-classic:nth-child(2) .pane-row-classic:nth-child(2)"}],
+    "waitFor": ".group-classic:nth-child(2) .pane-row-classic:nth-child(2).active"
+  },
+  {
+    "name": "04-color",
+    "caption": "Give each project a color that carries through its panes.",
+    "actions": [{"type": "click", "selector": ".group-classic:nth-child(2) .group-swatch-classic"}],
+    "waitFor": ".group-classic:nth-child(2) .group-sleep-btn:not(:disabled)"
+  },
+  {
+    "name": "05-collapse",
+    "caption": "Collapse a group when you only need its header.",
+    "actions": [{"type": "click", "selector": ".group-classic:nth-child(1) .group-name"}],
+    "waitFor": ".group-classic:nth-child(1) .group-sleep-btn:not(:disabled)"
+  },
+  {
+    "name": "06-expand",
+    "caption": "Expand it again. Every pane is still there.",
+    "actions": [{"type": "click", "selector": ".group-classic:nth-child(1) .group-name"}],
+    "waitFor": ".group-classic:nth-child(1) .pane-row-classic:nth-child(3)"
+  },
+  {
+    "name": "07-copy-path",
+    "caption": "Copy a pane's full working directory from its folder icon.",
+    "actions": [{"type": "click", "selector": ".group-classic:nth-child(2) .pane-row-classic:nth-child(3) .pane-path-btn"}],
+    "waitFor": ".toast.show",
+    "settle": 100
+  },
+  {
+    "name": "08-sleep",
+    "caption": "Set a tab aside: the moon greys it out and hides its panes.",
+    "actions": [{"type": "click", "selector": ".group-classic:nth-child(2) .group-sleep-btn"}],
+    "waitFor": ".group-classic:nth-child(2) .group-sleep-btn[aria-pressed='true']:not(:disabled)",
+    "waitHidden": ".toast.show"
+  },
+  {
+    "name": "09-wake",
+    "caption": "Wake it to restore its color and expand the panes.",
+    "actions": [{"type": "click", "selector": ".group-classic:nth-child(2) .group-sleep-btn"}],
+    "waitFor": ".group-classic:nth-child(2) .group-sleep-btn[aria-pressed='false']:not(:disabled)"
+  },
+  {
+    "name": "10-settings",
+    "caption": "Choose the cockpit's look in Settings.",
+    "actions": [{"type": "click", "selector": "#btn-settings"}],
+    "waitFor": ".settings-theme-btn.active:text-is('Classic')"
+  },
+  {
+    "name": "11-modern",
+    "caption": "Classic or Modern. The same controls, a different feel.",
+    "actions": [{"type": "click", "selector": ".settings-theme-btn:text-is('Modern')"}],
+    "waitFor": "body[data-theme='2a'] .settings-theme-btn.active:text-is('Modern')"
+  },
+  {
+    "name": "12-modern-overview",
+    "caption": "Claude panes stay yellow. Your active pane stays obvious.",
+    "actions": [{"type": "press", "selector": "body", "key": "Escape"}],
+    "waitFor": ".group .pane-row.active"
+  },
+  {
+    "name": "13-restore-preview",
+    "caption": "Preview your saved workspace before restoring it.",
+    "actions": [{"type": "click", "selector": "#btn-restore"}],
+    "waitFor": ".restore-confirm-popup"
+  },
+  {
+    "name": "14-final",
+    "caption": "Keep every Claude session within reach.",
+    "seconds": 2.4,
+    "actions": [{"type": "press", "selector": "body", "key": "Escape"}],
+    "waitFor": ".group .pane-row.active"
+  }
+]

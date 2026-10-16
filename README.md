@@ -5,7 +5,9 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 [![iTerm2 3.5+](https://img.shields.io/badge/iTerm2-3.5%2B-blue)](https://iterm2.com)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://iterm2.com/python-api/)
 
-![iterm2-claude-cockpit panel showing the window/tab/pane tree alongside Claude Code](docs/demo.gif)
+![Playwright walkthrough of the cockpit: focus panes, color groups, copy paths, sleep tabs, switch themes, and preview workspace restore](docs/demo.gif)
+
+The demo uses the real cockpit UI with synthetic sessions and terminal output, not a live iTerm2 connection. [Run or rebuild the walkthrough](CONTRIBUTING.md#readme-demo).
 
 ## Features
 

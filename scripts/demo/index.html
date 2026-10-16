@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Cockpit - synthetic demo</title>
+  <style>
+    @font-face { font-family: JetBrains; src: url("/static/fonts/jetbrains-mono-variable.woff2"); }
+    @font-face { font-family: Space; src: url("/static/fonts/space-grotesk-variable.woff2"); }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { background: #0b1115; color: #edf4f3; padding: 20px; font-family: Space, system-ui, sans-serif; }
+    .demo { max-width: 1100px; height: 100%; margin: auto; display: flex; flex-direction: column; gap: 14px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    h1 { margin: 0 0 4px; font-size: 26px; font-weight: 600; letter-spacing: -0.7px; }
+    .subtitle { margin: 0; color: #91aaa9; font-size: 13px; }
+    .badge { padding: 7px 10px; border: 1px solid #30535a; border-radius: 6px; color: #a9d4ce; font: 10px JetBrains, monospace; white-space: nowrap; }
+    .workspace { flex: 1; min-height: 0; border: 1px solid #294148; border-radius: 10px; overflow: hidden; background: #10191d; box-shadow: 0 16px 38px #0005; }
+    .chrome { height: 32px; background: #1a272d; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-bottom: 1px solid #294148; }
+    .light { width: 9px; height: 9px; border-radius: 50%; background: #ee776d; }
+    .light:nth-child(2) { background: #e8c66e; }
+    .light:nth-child(3) { background: #8cbd96; }
+    .chrome-label { flex: 1; text-align: center; color: #8ca4a7; font: 10px JetBrains, monospace; padding-right: 38px; }
+    .workspace-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; height: calc(100% - 32px); }
+    .terminal { min-width: 0; padding: 22px; background: #0d1519; overflow: hidden; }
+    .terminal-label { margin: 0 0 9px; color: #f6c177; font: 12px JetBrains, monospace; }
+    .terminal-path { margin: 0 0 25px; color: #799a9b; font: 10px JetBrains, monospace; overflow-wrap: anywhere; }
+    pre { margin: 0; font: 11.5px/1.85 JetBrains, monospace; color: #c6d8d7; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .terminal-note { margin-top: 30px; padding-top: 13px; border-top: 1px solid #213039; color: #597b80; font: 9px JetBrains, monospace; }
+    .panel { border-left: 1px solid #294148; min-height: 0; }
+    iframe { display: block; border: 0; width: 100%; height: 100%; }
+    .caption { min-height: 67px; display: flex; align-items: center; gap: 14px; padding: 0 6px; }
+    .step { width: 32px; height: 32px; border: 1px solid #3c6468; border-radius: 8px; color: #a9d4ce; display: grid; place-items: center; font: 11px JetBrains, monospace; flex-shrink: 0; }
+    #caption { margin: 0; font-size: 18px; line-height: 1.4; font-weight: 500; }
+    @media (max-width: 700px) {
+      body { padding: 10px; }
+      .workspace-body { grid-template-columns: 1fr; }
+      .terminal, .badge { display: none; }
+      .panel { border-left: 0; }
+      h1 { font-size: 22px; }
+      #caption { font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="demo">
+    <header>
+      <div>
+        <h1>Claude Cockpit</h1>
+        <p class="subtitle">Your parallel Claude sessions, in one place.</p>
+      </div>
+      <span class="badge">SYNTHETIC DEMO / NO TERMINAL CONNECTION</span>
+    </header>
+    <section class="workspace" aria-label="Cockpit demo">
+      <div class="chrome" aria-hidden="true">
+        <span class="light"></span><span class="light"></span><span class="light"></span>
+        <span class="chrome-label">iTerm2 workspace preview</span>
+      </div>
+      <div class="workspace-body">
+        <section class="terminal" id="terminal" aria-label="Synthetic terminal preview">
+          <p class="terminal-label" id="terminal-name">Loading demo...</p>
+          <p class="terminal-path" id="terminal-path"></p>
+          <pre id="terminal-output"></pre>
+          <p class="terminal-note">Sample output. No shells or Claude processes are running.</p>
+        </section>
+        <aside class="panel">
+          <iframe id="cockpit" title="Live cockpit UI with synthetic sessions" src="/"></iframe>
+        </aside>
+      </div>
+    </section>
+    <div class="caption" aria-live="polite">
+      <span class="step" id="step">01</span>
+      <p id="caption">Every window, tab, and pane. One compact cockpit.</p>
+    </div>
+  </main>
+  <script>
+    window.setDemoCaption = (text, step) => {
+      document.getElementById("caption").textContent = text;
+      document.getElementById("step").textContent = String(step).padStart(2, "0");
+    };
+    let lastSession = null;
+    async function refreshTerminal() {
+      try {
+        const response = await fetch("/demo/state", { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (lastSession === data.active.id) return;
+        lastSession = data.active.id;
+        document.getElementById("terminal").dataset.session = lastSession;
+        document.getElementById("terminal-name").textContent = data.active.session_name;
+        document.getElementById("terminal-path").textContent = data.active.cwd;
+        document.getElementById("terminal-output").textContent = data.lines.join("\n");
+      } catch (error) {
+        lastSession = null;
+        document.getElementById("terminal-name").textContent = `Demo unavailable: ${error.message}`;
+        console.error(error);
+      }
+    }
+    refreshTerminal();
+    setInterval(refreshTerminal, 250);
+  </script>
+</body>
+</html>
