@@ -11,16 +11,34 @@ The demo uses the real cockpit UI with synthetic sessions and terminal output, n
 
 ## Features
 
-- Live hierarchical tree: window → tab → pane, updated in real time
+The scene numbers match the badges in the GIF, in the same order. The walkthrough stays in Classic; its before/after restore callouts are demo framing, not extra controls in the app.
+
+| GIF scene | Feature or demo state | Details |
+|-----------|-----------------------|---------|
+| 01 | **Workspace overview** | A live hierarchical tree of every window → tab → pane. |
+| 02 | **Focus a pane** | Click a pane to jump from Claude to its test runner; the active pane is highlighted. |
+| 03 | **Switch projects** | Focus a Claude pane in another project without searching through terminal tabs. |
+| 04 | **Color-code groups** | Click a tab's swatch to cycle through 6 colors, tinting its group and panes. Colors persist across restarts. |
+| 05 | **Collapse a group** | Hide its panes while keeping the tab header visible. Collapsed state persists across restarts. |
+| 06 | **Expand a group** | Reveal the same panes again without changing their sessions. |
+| 07 | **Inspect and copy a path** | Hover the folder icon beside × to see the full working directory; click to copy it, even on an inactive pane, without changing focus. The icon is disabled when the directory is unavailable. |
+| 08 | **Put a tab to sleep** | Click the **moon** between rename and the color swatch to grey out the group and collapse its panes. The name/caret and color swatch are disabled; shells and processes keep running. Sleep state survives restarts and workspace restore. |
+| 09 | **Wake a tab** | Click the moon again to restore its original color and expand the panes. Only the sleep button wakes a tab. |
+| 10 | **Confirm before closing** | Click the always-visible × to open the inline confirmation before closing a pane. |
+| 11 | **Keep the saved layout** | The demo's test pane is now closed: 4 panes remain open, while the saved workspace still contains all 5. |
+| 12 | **Preview a restore** | The **Restore** button shows how many windows, tabs, and panes will be recreated before you confirm. |
+| 13 | **Restore the workspace** | Recreate saved windows, tabs, and panes as plain shells in their saved working directories. Restore creates new windows, leaves existing windows intact, and does not resume running commands. |
+| 14 | **Restored workspace overview** | See the recreated window alongside the existing workspace, ready to focus panes and start new commands. |
+
+### Additional features
+
 - Two selectable panel themes (Settings panel → Theme): **Classic**, the default, a JetBrains Mono terminal-styled look, and **Modern**, a softer redesigned alternative. The choice persists across restarts
-- Per-tab group color coding: click a tab's swatch to cycle through 6 colors, which tints the tab's block and every pane in it; click a color chip in the header to filter the panel down to that color. Colors and collapsed state persist across restarts
-- Put a tab to sleep with the **moon** button between rename and the color swatch: its group turns grey and its panes collapse. Click the moon again to restore its original color and expand its panes. While asleep, the name/caret and color swatch are disabled; shells and processes keep running. Sleep state persists across restarts and workspace restore
+- Filter groups by color: click a color chip in the window header; other groups dim but stay visible
 - Claude panes stand out at a glance with a yellow pane title — detected via the pane's TTY, so it works for the Node-based install too
 - Auto-discovered link chips on group headers — every URL in a workspace status file becomes a labeled chip that opens in your browser (arrays open a popup of all their links); see [Group link chips](#group-link-chips) below
-- Click any pane to focus it immediately; its close (×) button is always visible. Hover the folder icon beside × to see the full working directory, or click it to copy the path without focusing the pane (active or inactive). The icon is disabled when the directory is unavailable. Hover a pane for a tooltip with its job, working directory, and last output line
+- Hover a pane for a tooltip with its job, working directory, and last output line
 - Rename tabs inline (✎ button next to the name) or programmatically via `POST /api/rename-tab`; custom names persist until the tab or window is closed
 - Create new tabs and windows from the panel
-- Session restore (⟲ button) — recreate your windows, tabs, and panes in their saved working directories after closing or updating iTerm2
 - Claude Code cheatsheet (✦ button) — a built-in quick reference of slash commands and keyboard shortcuts
 - Settings panel (⚙ button) — switch the panel theme and see the plugin version at a glance
 - Zero external dependencies — stdlib only, beyond the `iterm2` library bundled with iTerm2

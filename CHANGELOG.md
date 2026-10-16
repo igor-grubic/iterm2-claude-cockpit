@@ -24,7 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Drag-and-drop tab reordering: drag a tab's header in the panel to reorder it within its window. The new order is applied in iTerm2 via `POST /api/move-tab`.
 
 ### Changed
-- Refreshed the README demo to show pane focus, group colors, path copying, tab sleep/wake, and a clear before-and-after workspace restore, staying in the Classic theme. The walkthrough is reproducible with Playwright using the real panel UI and clearly labeled synthetic sessions, without connecting to iTerm2.
+- Refreshed the README demo to show pane focus, group colors, path copying, tab sleep/wake, and a clear before-and-after workspace restore, staying in the Classic theme. The README feature guide is numbered to match the GIF scenes. The walkthrough is reproducible with Playwright using the real panel UI and clearly labeled synthetic sessions, without connecting to iTerm2.
 - Pane paths are now behind a folder icon beside the close (×) button in both themes, leaving more room for long pane names. Hover to see the full path and click to copy it, even on inactive panes, without changing focus. The icon is disabled when the working directory is unavailable.
 - **Redesigned the panel's visual language** in the Modern theme: new dark palette, Space Grotesk/IBM Plex Mono type (bundled locally, no external font requests), and reworked spacing/radii throughout the tree, action grid, and bottom nav.
 - Bottom nav (iTerm / Claude / Settings / Restore) is now a plain-text 4-column bar with an underline on whichever tool is open, replacing the icon+label buttons.
