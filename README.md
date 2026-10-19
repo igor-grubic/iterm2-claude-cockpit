@@ -5,24 +5,46 @@ Live tree of every iTerm2 window, tab, and pane — purpose-built for orchestrat
 [![iTerm2 3.5+](https://img.shields.io/badge/iTerm2-3.5%2B-blue)](https://iterm2.com)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://iterm2.com/python-api/)
 
-![iterm2-claude-cockpit panel showing the window/tab/pane tree alongside Claude Code](docs/demo.gif)
+![Playwright walkthrough of the cockpit: focus panes, color groups, copy paths, sleep tabs, and restore a saved workspace with a clear before-and-after comparison](docs/demo.gif)
+
+The demo uses the real cockpit UI with synthetic sessions and terminal output, not a live iTerm2 connection. [Run or rebuild the walkthrough](CONTRIBUTING.md#readme-demo).
 
 ## Features
 
-- Live hierarchical tree: window → tab → pane, updated in real time
+The scene numbers match the badges in the GIF, in the same order. The walkthrough stays in Classic; its before/after restore callouts are demo framing, not extra controls in the app.
+
+| GIF scene | Feature or demo state | Details |
+|-----------|-----------------------|---------|
+| 01 | **Workspace overview** | A live hierarchical tree of every window → tab → pane. |
+| 02 | **Focus a pane** | Click a pane to jump from Claude to its test runner; the active pane is highlighted. |
+| 03 | **Switch projects** | Focus a Claude pane in another project without searching through terminal tabs. |
+| 04 | **Color-code groups** | Click a tab's swatch to cycle through 6 colors, tinting its group and panes. Colors persist across restarts. |
+| 05 | **Collapse a group** | Hide its panes while keeping the tab header visible. Collapsed state persists across restarts. |
+| 06 | **Expand a group** | Reveal the same panes again without changing their sessions. |
+| 07 | **Inspect and copy a path** | Hover the folder icon beside × to see the full working directory; click to copy it, even on an inactive pane, without changing focus. The icon is disabled when the directory is unavailable. |
+| 08 | **Put a tab to sleep** | Click the **moon** between rename and the color swatch to grey out the group and collapse its panes. The name/caret and color swatch are disabled; shells and processes keep running. Sleep state survives restarts and workspace restore. |
+| 09 | **Wake a tab** | Click the moon again to restore its original color and expand the panes. Only the sleep button wakes a tab. |
+| 10 | **Confirm before closing** | Click the always-visible × to open the inline confirmation before closing a pane. |
+| 11 | **Keep the saved layout** | The demo's test pane is now closed: 4 panes remain open, while the saved workspace still contains all 5. |
+| 12 | **Preview a restore** | The **Restore** button shows how many windows, tabs, and panes will be recreated before you confirm. |
+| 13 | **Restore the workspace** | Recreate saved windows, tabs, and panes as plain shells in their saved working directories. Restore creates new windows, leaves existing windows intact, and does not resume running commands. |
+| 14 | **Restored workspace overview** | See the recreated window alongside the existing workspace, ready to focus panes and start new commands. |
+
+### Additional features
+
 - Two selectable panel themes (Settings panel → Theme): **Classic**, the default, a JetBrains Mono terminal-styled look, and **Modern**, a softer redesigned alternative. The choice persists across restarts
-- Per-tab group color coding: click a tab's swatch to cycle through 6 colors, which tints the tab's block and every pane in it; click a color chip in the header to filter the panel down to that color. Colors and collapsed state persist across restarts
+- Filter groups by color: click a color chip in the window header; other groups dim but stay visible
 - Claude panes stand out at a glance with a yellow pane title — detected via the pane's TTY, so it works for the Node-based install too
 - Auto-discovered link chips on group headers — every URL in a workspace status file becomes a labeled chip that opens in your browser (arrays open a popup of all their links); see [Group link chips](#group-link-chips) below
-- Click any pane to focus it immediately; its close (×) button is always visible; on the active pane, click its path to copy the working directory to the clipboard. Hover a pane for a tooltip with its job, working directory, and last output line
+- Hover a pane for a tooltip with its job, working directory, and last output line
 - Rename tabs inline (✎ button next to the name) or programmatically via `POST /api/rename-tab`; custom names persist until the tab or window is closed
 - Create new tabs and windows from the panel
-- Session restore (⟲ button) — recreate your windows, tabs, and panes in their saved working directories after closing or updating iTerm2
 - Claude Code cheatsheet (✦ button) — a built-in quick reference of slash commands and keyboard shortcuts
 - Settings panel (⚙ button) — switch the panel theme and see the plugin version at a glance
 - Self-update (Settings → Updates) — check for new commits, see what changed, and update and restart in place without touching the terminal. Nothing is checked in the background; it only runs when you ask
 - Zero external dependencies — stdlib only, beyond the `iterm2` library bundled with iTerm2
 - Runs as an AutoLaunch daemon; starts automatically with iTerm2
+- Safer workspace recovery: process-directory fallback when iTerm2 cannot report a path, startup/pre-loss snapshot backups, and visible warnings for missing saved directories
 
 ## Requirements
 
@@ -104,13 +126,15 @@ Also, if you see an old **Worktree** entry in the toolbelt menu, untick it and r
 
 Closing iTerm2 kills every pane and its processes, so in-progress work is normally lost — which makes quitting or updating iTerm2 risky. Session restore brings your workspace layout back.
 
-As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory) under `~/.config/iterm2-claude-cockpit/`.
+As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory) under `~/.config/iterm2-claude-cockpit/`. If iTerm2 cannot report a pane's directory, it checks the foreground process's directory; a temporarily unavailable lookup retains the last known directory for that same session. This fallback preserves Unicode names, literal backslashes, tabs, and newlines without depending on locale settings.
 
 Two files are kept: `state.json` mirrors your *current* layout, while `restore.json` holds the *last-good* layout that Restore recreates. The split matters — when iTerm2 relaunches it usually comes back with a single window, and keeping that degraded layout out of `restore.json` is what lets Restore still bring back your full previous workspace.
 
-Click the **⟲ Restore** button in the footer (it shows a summary — how many windows, tabs, and panes — and confirms first) to recreate the saved windows, tabs, and panes. Each pane comes back as a plain shell `cd`'d into its saved directory. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive. To pick a Claude conversation back up, run `claude --continue` (or `claude --resume`) in the restored pane.
+For the first ten minutes after startup, a layout with new session identities or fewer known names/directories is also protected, even if its pane count has not shrunk. After that grace period the current non-empty layout may become the new restore source. The daemon backs up the startup restore source before any refresh, and also backs up the latest saved layout before adopting fewer panes or known names/directories. `restore-backups/` retains the ten most recent backups.
 
-What it does **not** restore: running processes (Claude sessions, dev servers, builds — panes come back as a plain shell), terminal scrollback, and exact split sizes (panes come back as a simple vertical split). Custom tab names, group colors, and collapsed state are persisted in the same file and also survive restarts.
+Click the **⟲ Restore** button in the footer (it shows a summary — how many windows, tabs, and panes — and confirms first) to recreate the saved windows, tabs, and panes. Each pane launches directly as a shell in its saved directory; no timed `cd` keystrokes are needed. The confirmation warns if directories were never saved. Missing or deleted directories use the profile's default directory and produce a warning rather than silently reporting success. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive. To pick a Claude conversation back up, run `claude --continue` (or `claude --resume`) in the restored pane.
+
+What it does **not** restore: running processes (Claude sessions, dev servers, builds — panes come back as a plain shell), terminal scrollback, and exact split sizes (panes come back as a simple vertical split). Custom tab names, group colors, collapsed state, and sleeping tabs are persisted in the same file and also survive restarts. Sleeping tabs retain their original color for when you wake them.
 
 ## Group link chips
 
@@ -172,6 +196,22 @@ other than `main`, or when the install isn't a git clone at all. If an update ch
 **Check the console first:** `Scripts → Manage → Console` — Python tracebacks appear here.
 
 **Verify the daemon is running:** `curl -s http://127.0.0.1:9876/` should return the panel HTML.
+
+---
+
+### Restored panes opened at home or tab names are missing
+
+Check `~/.config/iterm2-claude-cockpit/restore.json` and `restore-backups/` for the original `cwd` and per-tab `name` values. A layout can have all its panes but still be missing this metadata; earlier versions protected only pane counts and did not keep backups.
+
+To use an intact backup, stop **only the cockpit script** in `Scripts → Manage`, copy the chosen backup over `restore.json`, then start the script again and use **Restore**. Stop the script before copying so its shutdown flush cannot overwrite your selection. You do not need to quit iTerm2 or close existing panes.
+
+The fix cannot invent paths or custom titles that were already absent from all saved copies. Recent Claude/Copilot project history can help reconstruct candidate directories, but does not reliably recover tab order or custom names.
+
+---
+
+### A directory lookup is rejected as ambiguous or unavailable
+
+The daemon logs and ignores system lookup results when the directory cannot be verified or `lsof` uses ambiguous control-character notation (such as `^A`, which can also be literal filename text). It retains the last known directory for that same pane rather than guessing. Install iTerm2's shell integration (`iTerm2 > Install Shell Integration`) so iTerm2 can report paths directly; if the current directory was deleted, move into an existing directory.
 
 ---
 

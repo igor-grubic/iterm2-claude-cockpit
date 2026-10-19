@@ -18,6 +18,7 @@ import re
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -86,6 +87,7 @@ class State:
         self.tab_names: dict[str, str] = {}  # tab_id → custom name
         self.tab_colors: dict[str, int] = {}  # tab_id → group color index (0-5)
         self.tab_collapsed: dict[str, bool] = {}  # tab_id → group collapsed state
+        self.tab_sleeping: dict[str, bool] = {}  # tab_id → visual-only sleep state
         self.theme: str = persistence.normalize_theme((persistence.load_settings() or {}).get("theme"))
         self.lock = threading.Lock()
         # Set True while a structural write (e.g. move-tab) is in flight to prevent
@@ -97,6 +99,8 @@ class State:
         self._last_persist_ts: float = 0.0
         self._last_persisted_sig: str = ""
         self._start_monotonic: float = time.monotonic()
+        self._persist_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cockpit-persist")
+        self._pending_persist: Future[None] | None = None
         # Two files on disk (see persistence.py): state.json mirrors the *current*
         # layout (overwritten ~1s after launch with the degraded post-relaunch one),
         # while restore.json holds the last-good layout the rolling save never
@@ -106,31 +110,42 @@ class State:
         restore = persistence.load_restore()
         if restore is None:
             restore = persistence.load_state()
+        persistence.backup_restore(restore)
         self.restore_snapshot: dict[str, Any] | None = restore
         self._restore_pane_count: int = persistence.count_panes(restore)
-        # Seed in-memory metadata from it so custom tab names/colors/collapsed
-        # state survive a daemon restart (correct when iTerm2 stayed up; harmlessly
-        # ignored when its ids are stale after a full iTerm2 restart).
-        if self.restore_snapshot:
-            self.tab_names = {str(k): str(v) for k, v in (self.restore_snapshot.get("tab_names") or {}).items()}
-            self.tab_colors = {str(k): int(v) for k, v in (self.restore_snapshot.get("tab_colors") or {}).items()}
-            self.tab_collapsed = {
-                str(k): bool(v) for k, v in (self.restore_snapshot.get("tab_collapsed") or {}).items()
-            }
+        self._restore_state = restore
+        self._last_restore_sig = ""
+        # The rolling mirror has the latest metadata, even while restore is frozen.
+        # Match surviving sessions so recycled tab numbers cannot inherit old names.
+        live_tabs = {
+            str(tab.tab_id): {session.session_id for session in tab.sessions}
+            for window in app.terminal_windows
+            for tab in window.tabs
+        }
+        self._startup_state = persistence.load_state() or restore
+        metadata = persistence.live_tab_metadata(self._startup_state, live_tabs)
+        self.tab_names = {k: str(v) for k, v in metadata["tab_names"].items()}
+        self.tab_colors = {k: int(v) for k, v in metadata["tab_colors"].items()}
+        self.tab_collapsed = {k: bool(v) for k, v in metadata["tab_collapsed"].items()}
+        self.tab_sleeping = {k: bool(v) for k, v in metadata["tab_sleeping"].items()}
 
     async def refresh(self) -> None:
         with self.lock:
             tab_names = dict(self.tab_names)
             tab_colors = dict(self.tab_colors)
             tab_collapsed = dict(self.tab_collapsed)
+            tab_sleeping = dict(self.tab_sleeping)
+            previous_snapshot = self.snapshot if self.snapshot.get("windows") else self._startup_state
         try:
-            snap = await tree.build_tree(self.app, tab_names, tab_colors, tab_collapsed)
+            snap = await tree.build_tree(
+                self.app, tab_names, tab_colors, tab_collapsed, tab_sleeping, previous_snapshot
+            )
         except Exception as exc:
             log.exception("tree build failed: %s", exc)
             return
         with self.lock:
             self.snapshot = snap
-        self._maybe_persist(snap, tab_names, tab_colors, tab_collapsed)
+        self._maybe_persist(snap, tab_names, tab_colors, tab_collapsed, tab_sleeping)
 
     def _maybe_persist(
         self,
@@ -138,34 +153,37 @@ class State:
         tab_names: dict[str, str],
         tab_colors: dict[str, int],
         tab_collapsed: dict[str, bool],
+        tab_sleeping: dict[str, bool],
     ) -> None:
         """Persist workspace state to disk, debounced and only when it changed.
 
-        Runs the disk write on the default executor so it never blocks the loop.
+        Serialize disk writes off-loop so older queued saves cannot finish last.
         """
         now = time.monotonic()
         if now - self._last_persist_ts < _PERSIST_DEBOUNCE_SECONDS:
             return
         try:
-            data = persistence.build_state(snap, tab_names, tab_colors, tab_collapsed)
+            data = persistence.build_state(snap, tab_names, tab_colors, tab_collapsed, tab_sleeping)
             sig = json.dumps(data, sort_keys=True)
         except Exception:
             log.exception("building persist state failed")
             return
         self._last_persist_ts = now
-        if sig == self._last_persisted_sig:
-            return
-        self._last_persisted_sig = sig
         # Always mirror the current layout to state.json.
-        self.loop.run_in_executor(None, persistence.save_state, data)
-        # Update the separate restore snapshot only when safe (never empty; shrinks
-        # held off until past the startup grace window), so the single-window layout
-        # iTerm2 relaunches with can't wipe the workspace before Restore is used.
+        if sig != self._last_persisted_sig:
+            self._last_persisted_sig = sig
+            self._pending_persist = self._persist_executor.submit(persistence.save_state, data)
+        # Evaluate restore separately from the rolling mirror's change signature,
+        # so a frozen layout can be adopted when the startup grace window expires.
         live_panes = persistence.count_panes(data)
         uptime = now - self._start_monotonic
-        if persistence.should_update_restore(live_panes, self._restore_pane_count, uptime):
+        if sig != self._last_restore_sig and persistence.should_update_restore(
+            live_panes, self._restore_pane_count, uptime, live_state=data, restore_state=self._restore_state
+        ):
             self._restore_pane_count = live_panes
-            self.loop.run_in_executor(None, persistence.save_restore, data)
+            self._restore_state = data
+            self._last_restore_sig = sig
+            self._pending_persist = self._persist_executor.submit(persistence.save_restore, data)
 
     def flush_now(self) -> None:
         """Synchronously persist the current in-memory state, bypassing the debounce and
@@ -182,15 +200,20 @@ class State:
             tab_names = dict(self.tab_names)
             tab_colors = dict(self.tab_colors)
             tab_collapsed = dict(self.tab_collapsed)
+            tab_sleeping = dict(self.tab_sleeping)
         try:
-            data = persistence.build_state(snap, tab_names, tab_colors, tab_collapsed)
+            data = persistence.build_state(snap, tab_names, tab_colors, tab_collapsed, tab_sleeping)
         except Exception:
             log.exception("building shutdown-flush state failed")
             return
+        if self._pending_persist is not None:
+            self._pending_persist.result()
         persistence.save_state(data)
         live_panes = persistence.count_panes(data)
         uptime = time.monotonic() - self._start_monotonic
-        if persistence.should_update_restore(live_panes, self._restore_pane_count, uptime):
+        if persistence.should_update_restore(
+            live_panes, self._restore_pane_count, uptime, live_state=data, restore_state=self._restore_state
+        ):
             persistence.save_restore(data)
 
     def get_snapshot(self) -> dict[str, Any]:
@@ -314,6 +337,7 @@ class _Handler(BaseHTTPRequestHandler):
                     "windows": len(windows),
                     "tabs": len(all_tabs),
                     "panes": len(all_panes),
+                    "missing_cwds": sum(not p.get("cwd") for p in all_panes),
                 }
             )
             return
@@ -355,10 +379,16 @@ class _Handler(BaseHTTPRequestHandler):
                 if not data:
                     self._send_json({"ok": False, "error": "no saved workspace"})
                     return
-                result = self.state.call_async(
-                    lambda: actions.restore_workspace(self.state.connection, self.state.app, data, self.state),
-                    timeout=60.0,
-                )
+
+                async def _restore() -> dict:
+                    self.state.suppress_refresh = True
+                    try:
+                        return await actions.restore_workspace(self.state.connection, self.state.app, data, self.state)
+                    finally:
+                        self.state.suppress_refresh = False
+                        await self.state.refresh()
+
+                result = self.state.call_async(_restore, timeout=60.0)
                 self._send_json(result)
                 return
             if path == "/api/split-pane":
@@ -415,6 +445,9 @@ class _Handler(BaseHTTPRequestHandler):
                     return
                 color = body.get("color")
                 with self.state.lock:
+                    if self.state.tab_sleeping.get(tab_id):
+                        self._send_json({"ok": False, "error": "tab is sleeping; wake it first"})
+                        return
                     if color is None:
                         self.state.tab_colors.pop(tab_id, None)
                     else:
@@ -427,9 +460,35 @@ class _Handler(BaseHTTPRequestHandler):
                     self._send_json({"ok": False, "error": "no tab id"})
                     return
                 with self.state.lock:
+                    if self.state.tab_sleeping.get(tab_id):
+                        self._send_json({"ok": False, "error": "tab is sleeping; wake it first"})
+                        return
                     if body.get("collapsed"):
                         self.state.tab_collapsed[tab_id] = True
                     else:
+                        self.state.tab_collapsed.pop(tab_id, None)
+                self._send_json({"ok": True})
+                return
+            if path == "/api/set-tab-sleeping":
+                tab_id = body.get("id")
+                sleeping = body.get("sleeping")
+                if not isinstance(tab_id, str) or not tab_id:
+                    self._send_json({"ok": False, "error": "no tab id"})
+                    return
+                if not isinstance(sleeping, bool):
+                    self._send_json({"ok": False, "error": "sleeping must be a boolean"})
+                    return
+                with self.state.lock:
+                    if not any(
+                        t.get("id") == tab_id for w in self.state.snapshot.get("windows", []) for t in w.get("tabs", [])
+                    ):
+                        self._send_json({"ok": False, "error": f"no tab {tab_id}"})
+                        return
+                    if sleeping:
+                        self.state.tab_sleeping[tab_id] = True
+                        self.state.tab_collapsed[tab_id] = True
+                    else:
+                        self.state.tab_sleeping.pop(tab_id, None)
                         self.state.tab_collapsed.pop(tab_id, None)
                 self._send_json({"ok": True})
                 return

@@ -7,3 +7,5 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 iterm_workflow/extensions.json
+node_modules/
+.playwright-mcp/

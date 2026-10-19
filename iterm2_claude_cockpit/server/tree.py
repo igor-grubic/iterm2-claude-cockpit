@@ -8,7 +8,7 @@ from pathlib import Path
 
 import iterm2
 
-from . import claude_detect, links
+from . import claude_detect, directories, links
 
 log = logging.getLogger("iterm2_claude_cockpit.tree")
 
@@ -66,9 +66,17 @@ async def _session_node(
     session: iterm2.Session,
     active_session_id: str | None,
     claude_ttys: set[str],
+    missing_cwds: dict[str, int],
 ) -> dict:
     job, last_line = await _session_status(session)
     cwd = await _get_var(session, "path") or ""
+    if not cwd:
+        try:
+            pid = await session.async_get_variable("jobPid")
+        except iterm2.RPCException:
+            log.warning("could not read foreground PID for pane %s", session.session_id, exc_info=True)
+            pid = None
+        missing_cwds[session.session_id] = int(pid) if isinstance(pid, (int, str)) and str(pid).isdigit() else 0
     tty = await _get_var(session, "tty") or ""
     iterm_title = await _session_title(session)
     title = _path_label(cwd)
@@ -97,13 +105,20 @@ async def _tab_node(
     tab_colors: dict[str, int] | None = None,
     tab_collapsed: dict[str, bool] | None = None,
     status_file: str = "",
+    tab_sleeping: dict[str, bool] | None = None,
+    missing_cwds: dict[str, int] | None = None,
 ) -> dict:
     panes: list[dict] = []
     for session in tab.sessions:
-        panes.append(await _session_node(session, active_session_id, claude_ttys or set()))
+        panes.append(
+            await _session_node(
+                session, active_session_id, claude_ttys or set(), missing_cwds if missing_cwds is not None else {}
+            )
+        )
 
     tab_id = str(tab.tab_id)
     title = (tab_names or {}).get(tab_id) or f"Tab {tab_idx + 1}"
+    sleeping = bool((tab_sleeping or {}).get(tab_id, False))
 
     # Link chips auto-discovered from a status file in the panes' cwds (small, mtime-cached
     # reads — see links.py). A workspace shared by several panes yields one chip set.
@@ -116,7 +131,8 @@ async def _tab_node(
         "active": str(tab.tab_id) == str(active_tab_id) if active_tab_id is not None else False,
         "panes": panes,
         "color": (tab_colors or {}).get(tab_id),
-        "collapsed": bool((tab_collapsed or {}).get(tab_id, False)),
+        "collapsed": sleeping or bool((tab_collapsed or {}).get(tab_id, False)),
+        "sleeping": sleeping,
         "links": tab_links,
     }
 
@@ -126,6 +142,8 @@ async def build_tree(
     tab_names: dict[str, str] | None = None,
     tab_colors: dict[str, int] | None = None,
     tab_collapsed: dict[str, bool] | None = None,
+    tab_sleeping: dict[str, bool] | None = None,
+    previous_snapshot: dict | None = None,
 ) -> dict:
     """Walk the App → Window → Tab → Session tree and return a JSON snapshot."""
     active_window = app.current_terminal_window
@@ -146,6 +164,7 @@ async def build_tree(
     status_file = links.status_filename()
 
     windows: list[dict] = []
+    missing_cwds: dict[str, int] = {}
     for win_idx, window in enumerate(app.terminal_windows):
         tabs: list[dict] = []
         for tab_idx, tab in enumerate(window.tabs):
@@ -160,6 +179,8 @@ async def build_tree(
                     tab_colors,
                     tab_collapsed,
                     status_file,
+                    tab_sleeping,
+                    missing_cwds,
                 )
             )
 
@@ -176,4 +197,23 @@ async def build_tree(
                 "tabs": tabs,
             }
         )
+    if missing_cwds:
+        resolved = await loop.run_in_executor(
+            None, directories.process_cwds, {pid for pid in missing_cwds.values() if pid}
+        )
+        previous_cwds = {
+            p["id"]: p["cwd"]
+            for w in (previous_snapshot or {}).get("windows", [])
+            for t in w.get("tabs", [])
+            for p in t.get("panes", [])
+            if p.get("id") and p.get("cwd")
+        }
+        for window in windows:
+            for tab in window["tabs"]:
+                for pane in tab["panes"]:
+                    if pane["id"] in missing_cwds:
+                        pane["cwd"] = resolved.get(missing_cwds[pane["id"]]) or previous_cwds.get(pane["id"], "")
+                        pane["title"] = _path_label(pane["cwd"])
+                if status_file:
+                    tab["links"] = links.resolve_tab_links([p["cwd"] for p in tab["panes"]], status_file)
     return {"windows": windows}

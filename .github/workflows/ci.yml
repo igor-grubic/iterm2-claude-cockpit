@@ -47,3 +47,15 @@ jobs:
         # stdlib unittest only — these cover the iterm2-free logic (persistence
         # write policy, pane counting, transcript-dir encoding).
         run: python -m unittest discover -s tests -v
+
+  demo-tests:
+    name: Demo fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:demo

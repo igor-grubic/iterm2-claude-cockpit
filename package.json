@@ -1,0 +1,16 @@
+{
+  "name": "iterm2-claude-cockpit-demo",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "demo": "node scripts/demo/server.mjs",
+    "demo:record": "node scripts/demo/record.mjs",
+    "test:demo": "node --test tests/demo.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.64.1"
+  }
+}

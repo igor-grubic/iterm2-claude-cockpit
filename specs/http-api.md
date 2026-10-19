@@ -258,6 +258,8 @@ Set or clear a tab's group color. Persists across restarts the same way `tab_nam
 
 Set `color` to `null` to clear it (uncolored).
 
+Sleeping tabs reject color changes with `{ "ok": false, "error": "tab is sleeping; wake it first" }`, keeping their original color intact.
+
 **Response:** `200 application/json` — `{ "ok": true }` or `{ "ok": false, "error": "..." }`
 
 ---
@@ -272,6 +274,28 @@ Set a tab group's collapsed state in the panel. Persists across restarts the sam
 { "id": "<tab id>", "collapsed": true | false }
 ```
 
+Sleeping tabs reject collapse/expand changes with `{ "ok": false, "error": "tab is sleeping; wake it first" }`. Only the sleep toggle wakes a sleeping tab.
+
+**Response:** `200 application/json` — `{ "ok": true }` or `{ "ok": false, "error": "..." }`
+
+---
+
+### `POST /api/set-tab-sleeping`
+
+Set a tab group's visual-only sleep state. Persists across daemon restarts and workspace restore.
+
+**Request body:** `application/json`
+
+```json
+{ "id": "<tab id>", "sleeping": true | false }
+```
+
+`id` must be a non-empty string identifying a tab in the current snapshot, and `sleeping` must be a JSON boolean. Missing/invalid values or an unknown tab return `{ "ok": false, "error": "..." }` without changing state.
+
+Sleeping atomically sets `sleeping: true` and `collapsed: true`. Waking clears both, always expanding the panes, even if the tab was collapsed before sleeping. The original `color` is never modified: both panel themes render sleeping tabs in grey and restore their original color (including uncolored) on wake. Color filters continue matching the original assigned color.
+
+The panel's name/caret (and pane count in Modern) and color swatch are disabled while asleep; only the **moon** (sleep) button wakes the tab. Rename, link chips, and drag-to-reorder remain available. No terminal processes are paused or stopped, and iTerm2's native tab color is not changed.
+
 **Response:** `200 application/json` — `{ "ok": true }` or `{ "ok": false, "error": "..." }`
 
 ---
@@ -283,16 +307,18 @@ Summarize what `POST /api/restore` would recreate, read from the in-memory saved
 **Response:** `200 application/json`
 
 ```json
-{ "ok": true, "windows": 3, "tabs": 8, "panes": 14 }
+{ "ok": true, "windows": 3, "tabs": 8, "panes": 14, "missing_cwds": 2 }
 ```
 
 `windows`/`tabs`/`panes` — totals that would be recreated. Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
+
+`missing_cwds` — panes with no saved working directory. The confirmation warns that these will use the profile's default directory. This count does not check whether non-empty paths still exist; restore reports unavailable directories in its `errors` array.
 
 ---
 
 ### `POST /api/restore`
 
-Recreate the last saved workspace (see "Session restore" in the README). Reads the persisted layout from `~/.config/iterm2-claude-cockpit/restore.json` — the last-good snapshot, kept separate from the rolling `state.json` mirror so a relaunch can't overwrite it — and creates fresh windows/tabs/panes, sending `cd <cwd>` into each pane so it comes back as a plain shell in its saved directory. Always creates new windows; it never modifies existing ones. Takes no request body.
+Recreate the last saved workspace (see "Session restore" in the README). Reads the persisted layout from `~/.config/iterm2-claude-cockpit/restore.json` — the last-good snapshot, kept separate from the rolling `state.json` mirror — and creates fresh windows/tabs/panes. Each shell starts in its saved directory through per-session profile customizations, without sending commands into a shell that may not be ready. Always creates new windows; it never modifies existing ones. Takes no request body.
 
 **Response:** `200 application/json`
 
@@ -300,9 +326,9 @@ Recreate the last saved workspace (see "Session restore" in the README). Reads t
 { "ok": true, "restored": 5 }
 ```
 
-`restored` — panes recreated. If one or more windows fail to recreate, restore continues with the rest and includes an `errors` array (e.g. `"errors": ["window 2: ..."]`) alongside `"ok": true` with the count that succeeded. Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
+`restored` — panes recreated. If windows/tabs/panes fail to recreate, restore continues where possible and includes an `errors` array (e.g. `"errors": ["window 2: ..."]`) alongside `"ok": true` with the count that succeeded. Missing or unavailable saved directories also produce a location-specific warning in `errors`; those panes open in the profile's default directory. The UI displays these warnings rather than an unqualified success. Returns `{ "ok": false, "error": "no saved workspace" }` when nothing has been saved yet.
 
-The restored workspace is the layout as it was during the *previous* daemon session (loaded into memory from `restore.json` at startup), not the freshly relaunched layout. `restore.json` is shrink-frozen for `RESTORE_FREEZE_SECONDS` after launch, so the single-window layout iTerm2 comes back with cannot wipe the snapshot before Restore is used.
+The restored workspace is the layout as it was during the *previous* daemon session (loaded into memory from `restore.json` at startup), not the freshly relaunched layout. For `RESTORE_FREEZE_SECONDS` after launch, `restore.json` rejects shrinks, unrelated session identities, and losses of known names/directories. After that grace period a non-empty layout may be adopted even without a further layout change. The startup source, and the latest saved layout before any subsequent pane/metadata loss, are backed up in `restore-backups/`, with the ten most recent backups retained. Refresh notifications are suppressed during restore, followed by one complete refresh with the restored metadata applied.
 
 ---
 
