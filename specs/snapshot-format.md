@@ -101,7 +101,7 @@ The links are resolved per group from the working directories of its panes: the 
 | `active` | boolean | Whether this is the currently focused pane |
 | `job` | string | Foreground process name (`jobName` variable), empty if unknown |
 | `last_line` | string | Last non-empty visible terminal line (max 120 chars), empty if unavailable |
-| `cwd` | string | Current working directory, empty if unknown |
+| `cwd` | string | iTerm2-reported working directory; when unavailable, the foreground process directory or last known directory for this same session. Empty only if all are unknown |
 | `tty` | string | Controlling TTY path (e.g. `/dev/ttys003`), empty if unknown |
 | `claude` | boolean | Whether a `claude`/`claude-code` process is attached to this pane's TTY (detected via `ps`). `true` even when the foreground `job` is `node`, since the npm/Node install runs Claude under Node. `false` if undetectable |
 
