@@ -125,7 +125,7 @@ Also, if you see an old **Worktree** entry in the toolbelt menu, untick it and r
 
 Closing iTerm2 kills every pane and its processes, so in-progress work is normally lost — which makes quitting or updating iTerm2 risky. Session restore brings your workspace layout back.
 
-As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory) under `~/.config/iterm2-claude-cockpit/`. If iTerm2 cannot report a pane's directory, it checks the foreground process's directory; a temporarily unavailable lookup retains the last known directory for that same session.
+As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory) under `~/.config/iterm2-claude-cockpit/`. If iTerm2 cannot report a pane's directory, it checks the foreground process's directory; a temporarily unavailable lookup retains the last known directory for that same session. This fallback preserves Unicode names, literal backslashes, tabs, and newlines without depending on locale settings.
 
 Two files are kept: `state.json` mirrors your *current* layout, while `restore.json` holds the *last-good* layout that Restore recreates. The split matters — when iTerm2 relaunches it usually comes back with a single window, and keeping that degraded layout out of `restore.json` is what lets Restore still bring back your full previous workspace.
 
@@ -185,6 +185,12 @@ Check `~/.config/iterm2-claude-cockpit/restore.json` and `restore-backups/` for 
 To use an intact backup, stop **only the cockpit script** in `Scripts → Manage`, copy the chosen backup over `restore.json`, then start the script again and use **Restore**. Stop the script before copying so its shutdown flush cannot overwrite your selection. You do not need to quit iTerm2 or close existing panes.
 
 The fix cannot invent paths or custom titles that were already absent from all saved copies. Recent Claude/Copilot project history can help reconstruct candidate directories, but does not reliably recover tab order or custom names.
+
+---
+
+### A directory lookup is rejected as ambiguous or unavailable
+
+The daemon logs and ignores system lookup results when the directory cannot be verified or `lsof` uses ambiguous control-character notation (such as `^A`, which can also be literal filename text). It retains the last known directory for that same pane rather than guessing. Install iTerm2's shell integration (`iTerm2 > Install Shell Integration`) so iTerm2 can report paths directly; if the current directory was deleted, move into an existing directory.
 
 ---
 

@@ -39,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Closing a pane now shows a small inline `sure?` confirmation next to the × button instead of closing immediately. Click `no` (or press `Escape` / click outside) to cancel.
 
 ### Fixed
+- Working-directory recovery preserves Unicode names, literal backslashes, tabs, and newlines even when iTerm2 starts without locale settings. Invalid, ambiguous, or unavailable process lookup results no longer replace a known directory.
 - Overlapping background saves and shutdown flushes no longer share a temporary filename or let an older queued save overwrite the final workspace state.
 - Workspace saves now fall back to the pane's foreground process directory when iTerm2 cannot report a path, retaining the last known path for the same session if that lookup temporarily fails. Restores launch each shell directly in its saved directory instead of racing shell startup with a typed `cd`.
 - A relaunched layout with the same or more panes can no longer immediately overwrite the saved workspace when its sessions have changed or its saved names/directories are missing. The last ten startup or pre-loss restore snapshots are kept in `restore-backups/` for recovery.
