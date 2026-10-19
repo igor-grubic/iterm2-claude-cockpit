@@ -729,6 +729,12 @@
     counts.textContent = `${plural(summary.windows || 0, "window")} · ${plural(summary.tabs || 0, "tab")} · ${plural(summary.panes || 0, "pane")}`;
 
     popup.append(title, counts);
+    if (summary.missing_cwds) {
+      const warning = document.createElement("div");
+      warning.className = "restore-confirm-counts";
+      warning.textContent = `${plural(summary.missing_cwds, "pane")} missing a saved directory; will use the profile default.`;
+      popup.append(warning);
+    }
 
     const actions = document.createElement("div");
     actions.className = "restore-confirm-actions";
@@ -938,7 +944,11 @@
       const data = await res.json();
       if (!data.ok) { toast(data.error || "restore failed", false); return; }
       const n = data.restored || 0;
-      toast(`restored ${n} pane${n === 1 ? "" : "s"}`);
+      if (data.errors && data.errors.length) {
+        toast(`restored ${n} panes with warnings: ${data.errors.join("; ")}`, false);
+      } else {
+        toast(`restored ${n} pane${n === 1 ? "" : "s"}`);
+      }
     } catch (e) {
       toast("restore error: " + e, false);
     } finally {

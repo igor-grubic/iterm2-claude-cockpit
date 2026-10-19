@@ -168,7 +168,10 @@ export async function createDemoServer({ port = 0 } = {}) {
         if (path === "/api/tree") return json(response, snapshot);
         if (path === "/api/settings") return json(response, { theme });
         if (path === "/api/about") return json(response, { version: "demo" });
-        if (path === "/api/restore-preview") return json(response, { ok: true, ...summarize(savedSnapshot) });
+        if (path === "/api/restore-preview") return json(response, {
+          ok: true, ...summarize(savedSnapshot),
+          missing_cwds: savedSnapshot.windows.flatMap(window => window.tabs).flatMap(tab => tab.panes).filter(pane => !pane.cwd).length,
+        });
         if (path === "/demo/state") {
           const active = allTabs().flatMap(tab => tab.panes).find(session => session.active) ?? null;
           return json(response, {
@@ -230,7 +233,7 @@ export async function createDemoServer({ port = 0 } = {}) {
               session.job = "zsh";
               session.claude = false;
               session.last_line = "$ ";
-              terminalOutputs.set(session.id, [`$ cd ${session.cwd}`, "", "$ pwd", session.cwd, "", "$ "]);
+              terminalOutputs.set(session.id, ["$ pwd", session.cwd, "", "$ "]);
             }
           }
         }

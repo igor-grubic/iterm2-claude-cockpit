@@ -43,6 +43,7 @@ The scene numbers match the badges in the GIF, in the same order. The walkthroug
 - Settings panel (⚙ button) — switch the panel theme and see the plugin version at a glance
 - Zero external dependencies — stdlib only, beyond the `iterm2` library bundled with iTerm2
 - Runs as an AutoLaunch daemon; starts automatically with iTerm2
+- Safer workspace recovery: process-directory fallback when iTerm2 cannot report a path, startup/pre-loss snapshot backups, and visible warnings for missing saved directories
 
 ## Requirements
 
@@ -124,11 +125,13 @@ Also, if you see an old **Worktree** entry in the toolbelt menu, untick it and r
 
 Closing iTerm2 kills every pane and its processes, so in-progress work is normally lost — which makes quitting or updating iTerm2 risky. Session restore brings your workspace layout back.
 
-As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory) under `~/.config/iterm2-claude-cockpit/`.
+As you work, the daemon saves a snapshot of your layout (windows → tabs → panes, each pane's working directory) under `~/.config/iterm2-claude-cockpit/`. If iTerm2 cannot report a pane's directory, it checks the foreground process's directory; a temporarily unavailable lookup retains the last known directory for that same session.
 
 Two files are kept: `state.json` mirrors your *current* layout, while `restore.json` holds the *last-good* layout that Restore recreates. The split matters — when iTerm2 relaunches it usually comes back with a single window, and keeping that degraded layout out of `restore.json` is what lets Restore still bring back your full previous workspace.
 
-Click the **⟲ Restore** button in the footer (it shows a summary — how many windows, tabs, and panes — and confirms first) to recreate the saved windows, tabs, and panes. Each pane comes back as a plain shell `cd`'d into its saved directory. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive. To pick a Claude conversation back up, run `claude --continue` (or `claude --resume`) in the restored pane.
+For the first ten minutes after startup, a layout with new session identities or fewer known names/directories is also protected, even if its pane count has not shrunk. After that grace period the current non-empty layout may become the new restore source. The daemon backs up the startup restore source before any refresh, and also backs up the latest saved layout before adopting fewer panes or known names/directories. `restore-backups/` retains the ten most recent backups.
+
+Click the **⟲ Restore** button in the footer (it shows a summary — how many windows, tabs, and panes — and confirms first) to recreate the saved windows, tabs, and panes. Each pane launches directly as a shell in its saved directory; no timed `cd` keystrokes are needed. The confirmation warns if directories were never saved. Missing or deleted directories use the profile's default directory and produce a warning rather than silently reporting success. This works after both quitting/updating iTerm2 **and** a full machine reboot, because it reads from disk rather than keeping processes alive. To pick a Claude conversation back up, run `claude --continue` (or `claude --resume`) in the restored pane.
 
 What it does **not** restore: running processes (Claude sessions, dev servers, builds — panes come back as a plain shell), terminal scrollback, and exact split sizes (panes come back as a simple vertical split). Custom tab names, group colors, collapsed state, and sleeping tabs are persisted in the same file and also survive restarts. Sleeping tabs retain their original color for when you wake them.
 
@@ -172,6 +175,16 @@ Edits take effect on the next refresh — no restart needed. See `specs/http-api
 **Check the console first:** `Scripts → Manage → Console` — Python tracebacks appear here.
 
 **Verify the daemon is running:** `curl -s http://127.0.0.1:9876/` should return the panel HTML.
+
+---
+
+### Restored panes opened at home or tab names are missing
+
+Check `~/.config/iterm2-claude-cockpit/restore.json` and `restore-backups/` for the original `cwd` and per-tab `name` values. A layout can have all its panes but still be missing this metadata; earlier versions protected only pane counts and did not keep backups.
+
+To use an intact backup, stop **only the cockpit script** in `Scripts → Manage`, copy the chosen backup over `restore.json`, then start the script again and use **Restore**. Stop the script before copying so its shutdown flush cannot overwrite your selection. You do not need to quit iTerm2 or close existing panes.
+
+The fix cannot invent paths or custom titles that were already absent from all saved copies. Recent Claude/Copilot project history can help reconstruct candidate directories, but does not reliably recover tab order or custom names.
 
 ---
 

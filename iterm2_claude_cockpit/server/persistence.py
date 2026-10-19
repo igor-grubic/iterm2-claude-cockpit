@@ -6,7 +6,7 @@ plus the in-memory `tab_names`/`tab_colors`/`tab_collapsed`/`tab_sleeping` to di
 "Restore workspace" action can recreate the layout with each pane back in its
 saved working directory, with custom names/colors/collapsed/sleeping state intact.
 
-Two files are kept, side by side:
+Two files are kept, side by side, plus bounded startup backups:
 
 - `state.json`   — a rolling mirror of the *current* live layout, rewritten on
   every refresh. After a relaunch iTerm2 typically comes back with a single
@@ -15,6 +15,7 @@ Two files are kept, side by side:
   save never writes it; it is only updated through `should_update_restore`, which
   refuses to let the degraded post-relaunch layout overwrite the workspace before
   the user has had a chance to restore it.
+- `restore-backups/` — the last ten startup or pre-loss restore sources.
 
 Stdlib only. All functions swallow their own errors — persistence must never crash
 the daemon or interrupt a refresh.
@@ -27,6 +28,7 @@ import logging
 import os
 import time
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 log = logging.getLogger("iterm2_claude_cockpit.persistence")
@@ -36,6 +38,8 @@ STATE_DIR = _CONFIG_HOME / "iterm2-claude-cockpit"
 STATE_PATH = STATE_DIR / "state.json"  # rolling mirror of the current live layout
 RESTORE_PATH = STATE_DIR / "restore.json"  # last-good layout the Restore action recreates
 SETTINGS_PATH = STATE_DIR / "settings.json"  # plain UI preferences (e.g. panel theme)
+RESTORE_BACKUP_DIR = STATE_DIR / "restore-backups"
+RESTORE_BACKUP_LIMIT = 10
 
 # Panel visual themes selectable in Settings. "1a" is the classic terminal-styled
 # look (default); "2a" is the modern redesign. See webview/app.js's THEMES table.
@@ -49,7 +53,8 @@ STATE_VERSION = 1
 # A shrink in the live layout is only adopted into restore.json once the daemon has
 # been up this long, so the single-window layout iTerm2 relaunches with cannot
 # overwrite the saved workspace before the user gets a chance to restore it. Growth
-# is always adopted immediately; this grace window only gates shrinks.
+# with surviving session identities is adopted immediately; new sessions and
+# metadata loss are also held off during this grace window.
 RESTORE_FREEZE_SECONDS = 600.0
 
 
@@ -77,12 +82,13 @@ def build_state(
             live_tab_ids.add(str(tab.get("id", "")))
             panes: list[dict] = []
             for pane in tab.get("panes", []):
-                panes.append({"cwd": pane.get("cwd", "")})
+                panes.append({"id": pane.get("id", ""), "cwd": pane.get("cwd", "")})
             # Persist metadata keyed by the live tab id, which dies on
             # restart — these are what restore re-applies to the freshly created tab.
             tab_id = tab.get("id", "")
             tabs.append(
                 {
+                    "id": tab_id,
                     "name": tab_names.get(tab_id),
                     "color": tab_colors.get(tab_id),
                     "collapsed": tab_sleeping.get(tab_id, False) or tab_collapsed.get(tab_id, False),
@@ -107,10 +113,18 @@ def build_state(
 def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
     """Atomically write `data` (stamped with saved_at) to `path` via tmp + replace."""
     data = {**data, "saved_at": int(time.time())}
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
-    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", prefix=f"{path.name}.tmp.", dir=path.parent, delete=False
+        ) as file:
+            tmp = Path(file.name)
+            json.dump(data, file, indent=2)
+        os.replace(tmp, path)
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -146,6 +160,9 @@ def save_restore(data: dict[str, Any]) -> None:
     overwrite it (see should_update_restore for the write policy).
     """
     try:
+        previous = load_restore()
+        if previous and has_layout_loss(data, previous):
+            backup_restore(previous)
         _write_json_atomic(RESTORE_PATH, data)
     except Exception:
         log.exception("failed to persist restore snapshot")
@@ -154,6 +171,55 @@ def save_restore(data: dict[str, Any]) -> None:
 def load_restore() -> dict[str, Any] | None:
     """Read the restore snapshot (restore.json), or None if missing/unreadable."""
     return _read_json(RESTORE_PATH)
+
+
+def backup_restore(data: dict[str, Any] | None) -> None:
+    """Preserve a restore source before startup or layout/metadata loss."""
+    if not data or not count_panes(data):
+        return
+    try:
+        path = RESTORE_BACKUP_DIR / f"restore-{time.time_ns()}.json"
+        _write_json_atomic(path, {**data, "source_saved_at": data.get("saved_at")})
+        path.chmod(0o600)
+        for old in sorted(RESTORE_BACKUP_DIR.glob("restore-*.json"))[:-RESTORE_BACKUP_LIMIT]:
+            old.unlink()
+    except OSError:
+        log.exception("failed to back up restore snapshot")
+
+
+def pane_ids(data: dict[str, Any] | None) -> set[str]:
+    """Session identities distinguish a daemon reload from new iTerm2 panes."""
+    return {
+        str(pane["id"])
+        for window in (data or {}).get("windows", [])
+        for tab in window.get("tabs", [])
+        for pane in tab.get("panes", [])
+        if pane.get("id")
+    }
+
+
+def live_tab_metadata(data: dict[str, Any] | None, live_tabs: dict[str, set[str]]) -> dict[str, dict[str, Any]]:
+    """Attach saved metadata to surviving sessions, not reused native tab numbers."""
+    fields = {"tab_names": "name", "tab_colors": "color", "tab_collapsed": "collapsed", "tab_sleeping": "sleeping"}
+    result: dict[str, dict[str, Any]] = {field: {} for field in fields}
+    if not data:
+        return result
+    if not pane_ids(data):
+        # Legacy files have no session identities; retain their old tab-id behavior.
+        return {
+            field: {str(k): v for k, v in (data.get(field) or {}).items() if str(k) in live_tabs} for field in fields
+        }
+    for window in data.get("windows", []):
+        for tab in window.get("tabs", []):
+            saved_ids = {str(p["id"]) for p in tab.get("panes", []) if p.get("id")}
+            matches = [tab_id for tab_id, ids in live_tabs.items() if saved_ids & ids]
+            if len(matches) != 1:
+                continue
+            for field, key in fields.items():
+                value = tab.get(key)
+                if value is not None:
+                    result[field][matches[0]] = value
+    return result
 
 
 def normalize_theme(value: Any) -> str:
@@ -181,11 +247,25 @@ def count_panes(state: dict[str, Any] | None) -> int:
     return sum(len(tab.get("panes", [])) for win in state.get("windows", []) for tab in win.get("tabs", []))
 
 
+def has_layout_loss(live: dict[str, Any], saved: dict[str, Any]) -> bool:
+    """Whether adopting live would lose panes or known names/directories."""
+
+    def counts(data: dict[str, Any]) -> tuple[int, int, int]:
+        tabs = [t for w in data.get("windows", []) for t in w.get("tabs", [])]
+        panes = [p for t in tabs for p in t.get("panes", [])]
+        return len(panes), sum(bool(p.get("cwd")) for p in panes), sum(bool(t.get("name")) for t in tabs)
+
+    return any(current < previous for current, previous in zip(counts(live), counts(saved), strict=True))
+
+
 def should_update_restore(
     live_panes: int,
     restore_panes: int,
     uptime_seconds: float,
     freeze_seconds: float = RESTORE_FREEZE_SECONDS,
+    *,
+    live_state: dict[str, Any] | None = None,
+    restore_state: dict[str, Any] | None = None,
 ) -> bool:
     """Decide whether the current live layout may overwrite the restore snapshot.
 
@@ -193,14 +273,24 @@ def should_update_restore(
     (usually a single window) long enough for the user to click Restore, so:
 
     - An empty layout never becomes the restore source.
-    - Growth — the live layout is at least as large as the saved one — is always
-      adopted; this is how restore.json captures the workspace as it is built up.
+    - During startup, unrelated session identities or fewer known names/cwds are
+      protected even if the pane count is unchanged or larger.
+    - Otherwise, growth is adopted immediately.
     - A shrink is adopted only once the daemon has been up past `freeze_seconds`,
       so the post-relaunch transient can't clobber the snapshot, while a genuinely
       reduced workspace is still tracked (for recency) after the grace period.
     """
     if live_panes == 0:
         return False
+    if uptime_seconds < freeze_seconds and restore_state:
+        saved_ids = pane_ids(restore_state)
+        current_ids = pane_ids(live_state)
+        if saved_ids and current_ids and not saved_ids & current_ids:
+            return False
+
+        # Legacy snapshots can still reveal lost metadata without session IDs.
+        if live_state is not None and has_layout_loss(live_state, restore_state):
+            return False
     if live_panes >= restore_panes:
         return True
     return uptime_seconds >= freeze_seconds

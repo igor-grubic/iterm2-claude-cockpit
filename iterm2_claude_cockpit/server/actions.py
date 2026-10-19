@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import shlex
 import subprocess
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import iterm2
+
+from . import directories
 
 if TYPE_CHECKING:
     from .http import State
@@ -119,13 +120,16 @@ async def move_tab(app: iterm2.App, window_id: str, tab_id: str, position: int) 
     return {"ok": True}
 
 
-def build_launch_line(cwd: str) -> str:
-    """The shell line to send into a restored pane (empty if there's no cwd).
-
-    Restore recreates the layout and brings each pane back as a plain shell in
-    its saved working directory.
-    """
-    return f"cd {shlex.quote(cwd)}\n" if cwd else ""
+def _restore_profile(pane: dict, location: str, errors: list[str]) -> iterm2.LocalWriteOnlyProfile | None:
+    try:
+        cwd = directories.restore_cwd(pane.get("cwd"))
+    except ValueError as exc:
+        errors.append(f"{location}: {exc}; opened in the profile's default directory")
+        return None
+    profile = iterm2.LocalWriteOnlyProfile()
+    profile.set_initial_directory_mode(iterm2.InitialWorkingDirectory.INITIAL_WORKING_DIRECTORY_CUSTOM)
+    profile.set_custom_directory(cwd)
+    return profile
 
 
 async def restore_workspace(
@@ -154,25 +158,35 @@ async def restore_workspace(
         # abort the whole restore (and discard already-restored windows + counts,
         # which would also invite a duplicate-creating re-click).
         try:
-            window = await iterm2.Window.async_create(connection)
+            first_panes = tabs[0].get("panes") or [{}]
+            first_profile = _restore_profile(first_panes[0], f"window {win_idx + 1}, tab 1, pane 1", errors)
+            window = await iterm2.Window.async_create(connection, profile_customizations=first_profile)
             if window is None or not window.tabs:
                 errors.append(f"window {win_idx + 1}: could not create")
                 continue
 
             for tab_idx, tab_data in enumerate(tabs):
-                tab = window.tabs[0] if tab_idx == 0 else await window.async_create_tab()
+                panes = tab_data.get("panes") or [{}]
+                location = f"window {win_idx + 1}, tab {tab_idx + 1}"
+                profile = first_profile if tab_idx == 0 else _restore_profile(panes[0], f"{location}, pane 1", errors)
+                tab = window.tabs[0] if tab_idx == 0 else await window.async_create_tab(profile_customizations=profile)
                 if tab is None or not tab.sessions:
+                    errors.append(f"{location}: could not create tab")
                     continue
                 first_session = tab.sessions[0]
 
-                for pane_idx, pane in enumerate(tab_data.get("panes", [])):
-                    session = first_session if pane_idx == 0 else await first_session.async_split_pane(vertical=True)
+                for pane_idx, pane in enumerate(panes):
+                    session = (
+                        first_session
+                        if pane_idx == 0
+                        else await first_session.async_split_pane(
+                            vertical=True,
+                            profile_customizations=_restore_profile(pane, f"{location}, pane {pane_idx + 1}", errors),
+                        )
+                    )
                     if session is None:
+                        errors.append(f"{location}, pane {pane_idx + 1}: could not create pane")
                         continue
-                    line = build_launch_line(pane.get("cwd", ""))
-                    if line:
-                        await asyncio.sleep(0.15)  # let the shell prompt appear before typing
-                        await session.async_send_text(line)
                     restored += 1
 
                 tab_id = str(tab.tab_id)

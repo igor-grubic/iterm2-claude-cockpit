@@ -77,7 +77,7 @@ test("collapse, theme changes, and reset are repeatable", async () => {
   assert.equal((await get("/api/settings")).theme, "1a");
   assert.equal((await get("/api/tree")).windows[0].tabs[0].collapsed, false);
   assert.equal((await get("/demo/state")).active.id, "api-claude");
-  assert.deepEqual(await get("/api/restore-preview"), { ok: true, windows: 1, tabs: 3, panes: 5 });
+  assert.deepEqual(await get("/api/restore-preview"), { ok: true, windows: 1, tabs: 3, panes: 5, missing_cwds: 0 });
 });
 
 test("closing a pane preserves the saved layout and selects a remaining pane", async () => {
@@ -89,7 +89,7 @@ test("closing a pane preserves the saved layout and selects a remaining pane", a
   assert.equal(state.restore.current.panes, 4);
   assert.equal(state.restore.saved.panes, 5);
   assert.equal(state.restore.restored, 0);
-  assert.deepEqual(await get("/api/restore-preview"), { ok: true, windows: 1, tabs: 3, panes: 5 });
+  assert.deepEqual(await get("/api/restore-preview"), { ok: true, windows: 1, tabs: 3, panes: 5, missing_cwds: 0 });
   await post("/api/close-session", { id: "api-claude" });
   const snapshot = await get("/api/tree");
   assert.equal(snapshot.windows[0].tabs.length, 2);
@@ -118,7 +118,7 @@ test("restore creates fresh shell panes in new windows without replacing existin
   await post("/api/focus", { kind: "session", id: restoredPanes[1].id });
   const state = await get("/demo/state");
   assert.equal(state.active.id, restoredPanes[1].id);
-  assert.deepEqual(state.lines, ["$ cd /Users/demo/code/api-service", "", "$ pwd", "/Users/demo/code/api-service", "", "$ "]);
+  assert.deepEqual(state.lines, ["$ pwd", "/Users/demo/code/api-service", "", "$ "]);
   assert.equal(state.restore.restored, 5);
   assert.deepEqual(await post("/api/restore", {}), { ok: true, restored: 5 });
   const again = await get("/api/tree");
