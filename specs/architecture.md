@@ -68,6 +68,9 @@ Minimal HTTP server (no framework). Routes:
 - `GET /api/tree` → snapshot JSON
 - `POST /api/*` → action dispatch
 - `GET /static/*` → bundled webview assets
+- `GET /api/update/check`, `POST /api/update/apply` → self-update (see `server/updater.py`)
+
+`POST` handlers reject requests whose `Origin` header isn't the panel's own. Loopback binding alone never stopped another page in the user's browser from POSTing here, and `/api/update/apply` moves the checkout the daemon runs from.
 
 ### `server/actions.py`
 Handles user-initiated actions (focus window/tab/pane, create tab/window, split pane, close session, restore workspace). Returns `{"ok": true}` or `{"error": "..."}`. `restore_workspace` recreates persisted windows/tabs/panes, launching each shell in its saved directory via per-session profile customizations, and re-applies each tab's saved name/color/collapsed/sleeping state onto the freshly created tab id. Missing/unavailable directories and partial creation failures are returned in `errors` and shown by the panel. Structural refreshes are suppressed until restore finishes so partial layouts do not get saved mid-operation.
@@ -89,6 +92,21 @@ Durable workspace state. Serializes the layout (windows → tabs → panes, each
 Sleep is an independent boolean, not a special color index: `tab_colors` retains the original color, while the panel renders a grey override and hides panes. `POST /api/set-tab-sleeping` updates sleep and collapse together under the state lock; wake always expands. Color and collapse endpoints reject changes while sleeping. This is presentation only, with no iTerm2 process or native color changes.
 
 A third, independent file, `settings.json`, holds plain UI preferences unrelated to the window/tab/pane layout — currently just the selected panel theme (`GET`/`POST /api/settings`). It has no freeze-window logic like `restore.json`; `save_settings`/`load_settings` are thin wrappers around the same atomic-write/read helpers.
+
+### `server/updater.py`
+In-place self-update over the checkout the daemon is running from. `check()` runs `git fetch origin main` and reports how far behind `HEAD` is; `apply(sha)` fast-forwards onto that exact sha and `schedule_restart()` re-execs the process.
+
+Split in two on purpose: `git fetch` already downloads the new commits *and their contents* into `.git` without touching the working tree, so the apply step is purely local — moving a ref and writing files out — and can't half-fail on the network. Applying the sha the check reported (rather than re-resolving `origin/main`) means the user installs exactly the commits whose subjects the panel showed them.
+
+Every git call runs with a timeout and `GIT_TERMINAL_PROMPT=0` / `ssh -oBatchMode=yes`, because a credential or passphrase prompt has no terminal to appear on here and would park an HTTP worker thread indefinitely. `git merge --ff-only` refuses rather than merging, so a failed apply leaves no partial state and no conflict to resolve.
+
+The restart is `os.execve` onto the same interpreter and argv: the process image is replaced while the pid survives, so iTerm2 never sees its AutoLaunch script exit. The websocket fd closes on exec and the new image reconnects and re-registers the toolbelt; the HTTP socket closes with it and rebinds immediately (`ThreadingHTTPServer` sets `SO_REUSEADDR`).
+
+Reconnecting needs a fresh API cookie. The `ITERM2_COOKIE` iTerm2 gave the AutoLaunch script is one-time and already used, and exec keeps the environment. So before restarting, `request_api_credentials()` asks iTerm2 for a new cookie and key (`osascript`, the same `request cookie and key` command the iterm2 library uses), and the exec passes them in. If iTerm2 refuses, the daemon skips the restart and keeps running: the update is on disk, and the panel asks the user to restart iTerm2. Without the fresh cookie, the new image would depend on the library's 401 fallback, and if that failed, `run_forever` would exit and take the panel with it.
+
+The panel tells the old process from the new one by `boot_id`, a random per-process token in `GET /api/about`, and reloads only once it changes. The first polls after an apply usually still reach the old process, and reloading then would land in the restart gap.
+
+This module imports nothing from `iterm2` and takes an explicit `root`, so the whole flow is unit-tested against throwaway repositories in `tests/test_updater.py`.
 
 ### `webview/`
 Static browser assets. `app.js` polls `/api/tree`, diffs the response, and updates the DOM. `index.html` also wires the iTerm2 and Claude Code cheatsheet buttons, which fetch static HTML fragments (`iterm_cheatsheet.html`, `claude_cheatsheet.html`).
