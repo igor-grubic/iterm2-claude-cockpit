@@ -100,7 +100,11 @@ Split in two on purpose: `git fetch` already downloads the new commits *and thei
 
 Every git call runs with a timeout and `GIT_TERMINAL_PROMPT=0` / `ssh -oBatchMode=yes`, because a credential or passphrase prompt has no terminal to appear on here and would park an HTTP worker thread indefinitely. `git merge --ff-only` refuses rather than merging, so a failed apply leaves no partial state and no conflict to resolve.
 
-The restart is `os.execv` onto the same interpreter and argv: the process image is replaced while the pid survives, so iTerm2 never sees its AutoLaunch script exit. The websocket fd closes on exec and the new image reconnects and re-registers the toolbelt; the HTTP socket closes with it and rebinds immediately (`ThreadingHTTPServer` sets `SO_REUSEADDR`). The panel's poll loop rides out the ~1s gap with its existing "disconnected — retrying" path, then reloads once `/api/about` answers.
+The restart is `os.execve` onto the same interpreter and argv: the process image is replaced while the pid survives, so iTerm2 never sees its AutoLaunch script exit. The websocket fd closes on exec and the new image reconnects and re-registers the toolbelt; the HTTP socket closes with it and rebinds immediately (`ThreadingHTTPServer` sets `SO_REUSEADDR`).
+
+Reconnecting needs a fresh API cookie. The `ITERM2_COOKIE` iTerm2 gave the AutoLaunch script is one-time and already used, and exec keeps the environment. So before restarting, `request_api_credentials()` asks iTerm2 for a new cookie and key (`osascript`, the same `request cookie and key` command the iterm2 library uses), and the exec passes them in. If iTerm2 refuses, the daemon skips the restart and keeps running: the update is on disk, and the panel asks the user to restart iTerm2. Without the fresh cookie, the new image would depend on the library's 401 fallback, and if that failed, `run_forever` would exit and take the panel with it.
+
+The panel tells the old process from the new one by `boot_id`, a random per-process token in `GET /api/about`, and reloads only once it changes. The first polls after an apply usually still reach the old process, and reloading then would land in the restart gap.
 
 This module imports nothing from `iterm2` and takes an explicit `root`, so the whole flow is unit-tested against throwaway repositories in `tests/test_updater.py`.
 

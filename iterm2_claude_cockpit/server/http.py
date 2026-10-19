@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import re
+import secrets
 import threading
 import time
 from collections.abc import Callable
@@ -51,6 +52,11 @@ def _read_version() -> str:
 
 
 _PLUGIN_VERSION = _read_version()
+
+# Identifies this process image. The self-update re-exec keeps the pid and the
+# version string, so this is what lets the panel tell the restarted daemon from
+# the one it asked to restart.
+_BOOT_ID = secrets.token_hex(8)
 
 # Minimum seconds between workspace-state writes (layout changes are debounced).
 _PERSIST_DEBOUNCE_SECONDS = 5.0
@@ -220,6 +226,10 @@ class State:
         with self.lock:
             return self.snapshot
 
+    def clear_update_in_flight(self) -> None:
+        with self.lock:
+            self.update_in_flight = False
+
     def call_async(self, coro_factory: Callable[[], Any], timeout: float = 5.0) -> Any:
         """Schedule an async callable onto the iterm2 loop and wait for the result."""
         future = asyncio.run_coroutine_threadsafe(coro_factory(), self.loop)
@@ -313,7 +323,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(self.state.get_snapshot())
             return
         if path == "/api/about":
-            self._send_json({"version": _PLUGIN_VERSION})
+            self._send_json({"version": _PLUGIN_VERSION, "boot_id": _BOOT_ID})
             return
         if path == "/api/settings":
             self._send_json({"theme": self.state.theme})
@@ -503,20 +513,32 @@ class _Handler(BaseHTTPRequestHandler):
                     self.state.update_in_flight = True
                 result = updater.apply(str(body.get("sha") or ""))
                 if not result.get("ok"):
-                    with self.state.lock:
-                        self.state.update_in_flight = False
+                    self.state.clear_update_in_flight()
+                    self._send_json(result)
+                    return
+                credentials = updater.request_api_credentials()
+                if credentials is None:
+                    # Re-exec'ing without a fresh cookie risks a daemon that can't
+                    # reconnect and exits. Keep this one running; the update is on
+                    # disk and takes effect the next time iTerm2 starts.
+                    self.state.clear_update_in_flight()
+                    result["restarting"] = False
+                    result["restart_required"] = True
                     self._send_json(result)
                     return
                 # Stay latched: the process is about to be replaced, and a second
                 # apply landing in that window would race the re-exec.
                 result["restarting"] = True
+                result["boot_id"] = _BOOT_ID
                 try:
                     self._send_json(result)
                 finally:
                     # The merge already landed on disk, so the daemon is now running
                     # code older than its own checkout. Restart even if the panel
                     # went away before it could be told (closed toolbelt, dead socket).
-                    updater.schedule_restart(self.state.flush_now)
+                    updater.schedule_restart(
+                        self.state.flush_now, credentials, on_failure=self.state.clear_update_in_flight
+                    )
                 return
             if path == "/api/settings":
                 theme = persistence.normalize_theme(body.get("theme"))

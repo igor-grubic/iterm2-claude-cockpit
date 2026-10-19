@@ -14,15 +14,20 @@ Returns the panel HTML (`webview/index.html`).
 
 ### `GET /api/about`
 
-Returns the plugin version.
+Returns the plugin version and an identifier for the running daemon process.
 
 **Response:** `200 application/json`
 
 ```json
 {
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "boot_id": "3f9c2a71d04be6a8"
 }
 ```
+
+- `boot_id` — random per process image, regenerated on every start. The self-update re-exec
+  keeps the pid and usually the version, so this is how the panel tells the restarted daemon
+  from the one it asked to restart (see `POST /api/update/apply`).
 
 ---
 
@@ -404,11 +409,28 @@ while the modal sat open.
 **Response:** `200 application/json`
 
 ```json
-{ "ok": true, "previous": "5deafb2", "current": "79161b2", "restarting": true }
+{ "ok": true, "previous": "5deafb2", "current": "79161b2", "restarting": true, "boot_id": "3f9c2a71d04be6a8" }
 ```
 
-The response is sent *before* the restart; the daemon then re-execs ~0.5s later. The panel
-polls `GET /api/about` until it answers and reloads itself.
+Before restarting, the daemon asks iTerm2 for a fresh API cookie (the AppleScript
+`request cookie and key` command). The cookie iTerm2 handed the AutoLaunch script is
+one-time and already used, so the re-exec'd process needs a new one to reconnect. The
+response is sent *before* the restart; the daemon then re-execs ~0.5s later with the fresh
+cookie in its environment. `boot_id` identifies the process being replaced. The panel polls
+`GET /api/about` until it reports a **different** `boot_id`, then reloads itself. Reloading
+on the first successful poll would race the re-exec, because those polls usually still reach
+the old process.
+
+If iTerm2 won't issue a cookie (for example, macOS Automation permission was denied), the
+update is still applied but the daemon is **not** restarted, because a re-exec that can't
+reconnect would exit and take the panel with it:
+
+```json
+{ "ok": true, "previous": "5deafb2", "current": "79161b2", "restarting": false, "restart_required": true }
+```
+
+The panel then tells the user to restart iTerm2 to finish. If the re-exec itself fails, the
+pre-update daemon keeps running and the `already_updating` latch is released.
 
 Preconditions are re-verified here rather than trusted from the check (the tree may have
 gone dirty in between), and `sha` must be a descendant of `HEAD`. On any failure nothing is

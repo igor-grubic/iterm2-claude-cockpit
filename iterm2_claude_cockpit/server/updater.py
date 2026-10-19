@@ -55,6 +55,10 @@ _INSTALLER_FILES = ("install.sh", "uninstall.sh")
 # need 200 rows in a toolbelt-width modal.
 _MAX_COMMITS = 20
 
+# Asking iTerm2 for an API cookie can surface a macOS Automation prompt the
+# first time; leave the user long enough to answer it.
+_CREDENTIALS_TIMEOUT = 30.0
+
 
 class UpdateError(Exception):
     """A git step failed in a way the panel should report verbatim."""
@@ -258,18 +262,78 @@ def apply(sha: str, root: Path | None = None) -> dict[str, Any]:
         return {"ok": False, "reason": "internal_error", "detail": str(exc)}
 
 
-def schedule_restart(flush: Callable[[], None], delay: float = 0.5) -> None:
+def parse_api_credentials(raw: str) -> dict[str, str] | None:
+    """Parse iTerm2's `request cookie and key` reply ("<cookie> <key>") into env vars.
+
+    Returns None for anything that isn't exactly two tokens, so a surprising
+    reply never gets passed on as a credential.
+    """
+    parts = raw.split()
+    if len(parts) != 2:
+        return None
+    return {"ITERM2_COOKIE": parts[0], "ITERM2_KEY": parts[1]}
+
+
+def _applescript_string(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def request_api_credentials(timeout: float = _CREDENTIALS_TIMEOUT) -> dict[str, str] | None:
+    """Get a fresh, unused iTerm2 API cookie for the re-exec'd daemon, or None.
+
+    iTerm2 gives an AutoLaunch script a one-time cookie in ITERM2_COOKIE and
+    discards it once used. `execv` keeps the environment, so without this the
+    new image would present that used cookie, get a 401, and depend on the
+    iterm2 library's AppleScript retry; if that retry fails, `run_forever`
+    exits and the panel stays gone until iTerm2 restarts. Asking first, while
+    the current daemon is still running, means a refusal only skips the
+    restart. It never costs the user the running daemon.
+
+    This is the same `request cookie and key` AppleScript command the library
+    uses, run through osascript. That keeps the module free of iterm2 imports,
+    and keeps NSAppleScript off a worker thread.
+    """
+    name = Path(sys.argv[0]).name or "iterm2_claude_cockpit.py"
+    script = f'tell application "iTerm2" to request cookie and key for app named {_applescript_string(name)}'
+    try:
+        proc = subprocess.run(
+            ["/usr/bin/osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.warning("could not request an iTerm2 API cookie: %s", exc)
+        return None
+    if proc.returncode != 0:
+        log.warning("iTerm2 refused an API cookie: %s", proc.stderr.strip())
+        return None
+    credentials = parse_api_credentials(proc.stdout)
+    if credentials is None:
+        log.warning("unexpected reply to the iTerm2 cookie request")
+    return credentials
+
+
+def schedule_restart(
+    flush: Callable[[], None],
+    credentials: dict[str, str],
+    on_failure: Callable[[], None] | None = None,
+    delay: float = 0.5,
+) -> None:
     """Re-exec the daemon in place, shortly, so the caller can answer first.
 
-    `os.execv` replaces the process image while keeping the pid, so iTerm2 never
-    sees its AutoLaunch script exit — the websocket fd closes on exec and the
-    new image reconnects and re-registers the toolbelt. The HTTP socket closes
-    with it, and ThreadingHTTPServer sets SO_REUSEADDR, so port 9876 rebinds
-    immediately. The panel's poll loop rides out the ~1s gap on its own
-    ("disconnected — retrying") and recovers without user action.
+    `os.execve` replaces the process image while keeping the pid, so iTerm2
+    never sees its AutoLaunch script exit. The websocket fd closes on exec, and
+    the new image reconnects with `credentials` (a fresh cookie from
+    `request_api_credentials`) and re-registers the toolbelt. The HTTP socket
+    closes with it, and ThreadingHTTPServer sets SO_REUSEADDR, so port 9876
+    rebinds immediately. The panel waits until /api/about reports a different
+    boot id, then reloads.
 
     The delay exists so the HTTP response for /api/update/apply is flushed to
-    the webview before this thread's process stops existing.
+    the webview before this thread's process stops existing. `on_failure` runs
+    if the exec itself fails and the pre-update daemon carries on.
     """
 
     def _restart() -> None:
@@ -283,8 +347,10 @@ def schedule_restart(flush: Callable[[], None], delay: float = 0.5) -> None:
         sys.stdout.flush()
         sys.stderr.flush()
         try:
-            os.execv(sys.executable, [sys.executable, *sys.argv])
+            os.execve(sys.executable, [sys.executable, *sys.argv], {**os.environ, **credentials})
         except Exception:
             log.exception("re-exec failed — daemon still running the pre-update code")
+            if on_failure is not None:
+                on_failure()
 
     threading.Timer(delay, _restart).start()

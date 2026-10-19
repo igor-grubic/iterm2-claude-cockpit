@@ -281,6 +281,16 @@ will have the traceback.
 
 ---
 
+### The update says "Restart iTerm2 to finish"
+
+The update was applied, but iTerm2 wouldn't give the restarted daemon a new API cookie. This
+usually means macOS denied Automation access to iTerm2. Rather than restart into a daemon
+that can't reconnect, the panel keeps running the old code. Restart iTerm2 to load the new
+version. To make future updates restart in place, allow it under
+`System Settings → Privacy & Security → Automation`.
+
+---
+
 ### Log paths show `~/.config/iterm2/AppSupport/Scripts/...` even though I used `~/Library/Application Support/...`
 
 iTerm2 3.6+ moved its support directory to an XDG-style path. The legacy `~/Library/Application Support/iTerm2/` location symlinks transparently to the new one — both work, the different path in logs is expected.

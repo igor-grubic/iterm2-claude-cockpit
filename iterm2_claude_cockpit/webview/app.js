@@ -890,15 +890,19 @@
     return UPDATE_BLOCKERS[reason] || detail || reason || "Update check failed.";
   }
 
-  // Poll /api/about until the re-exec'd daemon answers again, then reload so the
+  // Poll /api/about until a *different* daemon process answers, then reload so the
   // panel picks up the new HTML/CSS/JS (all served no-store, so no cache busting).
-  async function waitForRestart(statusEl, timeoutMs = 30000) {
+  // Comparing boot ids matters: the first polls usually reach the old process
+  // before it re-execs, and reloading then would land in the restart gap.
+  async function waitForRestart(statusEl, oldBootId, timeoutMs = 30000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 500));
       try {
         const res = await fetch("/api/about", { cache: "no-store" });
-        if (res.ok) { location.reload(); return; }
+        if (!res.ok) continue;
+        const about = await res.json();
+        if (about.boot_id && about.boot_id !== oldBootId) { location.reload(); return; }
       } catch (_) { /* daemon is mid-restart; keep waiting */ }
     }
     statusEl.textContent = "Updated, but the panel didn't come back. Restart iTerm2.";
@@ -993,8 +997,18 @@
             }));
             return;
           }
+          if (!result.restarting) {
+            // Applied, but iTerm2 wouldn't issue the restarted daemon a fresh API
+            // cookie, so the server kept the running one rather than risk losing it.
+            apply.remove();
+            status.appendChild(Object.assign(document.createElement("div"), {
+              className: "update-warn",
+              textContent: `Updated to ${result.current}. Restart iTerm2 to finish.`,
+            }));
+            return;
+          }
           apply.textContent = "Restarting…";
-          await waitForRestart(apply);
+          await waitForRestart(apply, result.boot_id);
         } catch (e) {
           apply.disabled = false;
           apply.textContent = "Update & restart";

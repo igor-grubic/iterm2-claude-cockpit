@@ -18,6 +18,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from iterm2_claude_cockpit.server import updater
 
@@ -80,6 +81,80 @@ class BlockingReasonTest(unittest.TestCase):
 
     def test_dirty_tree(self) -> None:
         self.assertEqual(updater.blocking_reason("main", "origin/main", " M a.py"), "dirty_tree")
+
+
+class ParseApiCredentialsTest(unittest.TestCase):
+    def test_cookie_and_key(self) -> None:
+        self.assertEqual(
+            updater.parse_api_credentials("abc123 def456\n"),
+            {"ITERM2_COOKIE": "abc123", "ITERM2_KEY": "def456"},
+        )
+
+    def test_rejects_anything_but_two_tokens(self) -> None:
+        for raw in ("", "\n", "onlycookie", "a b c", "execution error: not allowed (-1743)"):
+            with self.subTest(raw=raw):
+                self.assertIsNone(updater.parse_api_credentials(raw))
+
+
+class RequestApiCredentialsTest(unittest.TestCase):
+    def _run(self, **result: object) -> mock.MagicMock:
+        proc = mock.MagicMock(returncode=0, stdout="", stderr="")
+        for key, value in result.items():
+            setattr(proc, key, value)
+        return proc
+
+    def test_returns_fresh_credentials(self) -> None:
+        with mock.patch.object(updater.subprocess, "run", return_value=self._run(stdout="ck ky\n")) as run:
+            self.assertEqual(updater.request_api_credentials(), {"ITERM2_COOKIE": "ck", "ITERM2_KEY": "ky"})
+        script = run.call_args.args[0][-1]
+        self.assertIn('tell application "iTerm2" to request cookie and key for app named "', script)
+
+    def test_refusal_returns_none(self) -> None:
+        refused = self._run(returncode=1, stderr="Not authorized to send Apple events to iTerm2. (-1743)")
+        with mock.patch.object(updater.subprocess, "run", return_value=refused):
+            self.assertIsNone(updater.request_api_credentials())
+
+    def test_timeout_returns_none(self) -> None:
+        timeout = subprocess.TimeoutExpired("osascript", 30)
+        with mock.patch.object(updater.subprocess, "run", side_effect=timeout):
+            self.assertIsNone(updater.request_api_credentials())
+
+    def test_app_name_is_escaped(self) -> None:
+        with (
+            mock.patch.object(updater.sys, "argv", ['/tmp/we"ird\\name.py']),
+            mock.patch.object(updater.subprocess, "run", return_value=self._run(stdout="a b")) as run,
+        ):
+            updater.request_api_credentials()
+        self.assertTrue(run.call_args.args[0][-1].endswith('named "we\\"ird\\\\name.py"'))
+
+
+class ScheduleRestartTest(unittest.TestCase):
+    def _run_restart(self, execve: mock.MagicMock, on_failure: mock.MagicMock | None = None) -> mock.MagicMock:
+        flush = mock.MagicMock()
+        with (
+            mock.patch.object(updater.os, "execve", execve),
+            mock.patch.object(updater.threading, "Timer") as timer,
+        ):
+            updater.schedule_restart(flush, {"ITERM2_COOKIE": "fresh", "ITERM2_KEY": "k"}, on_failure=on_failure)
+            timer.call_args.args[1]()  # run the scheduled callback inline
+        flush.assert_called_once()
+        return flush
+
+    def test_execs_with_fresh_credentials(self) -> None:
+        execve = mock.MagicMock()
+        with mock.patch.dict(updater.os.environ, {"ITERM2_COOKIE": "used", "OTHER": "kept"}):
+            self._run_restart(execve)
+        _, argv, env = execve.call_args.args
+        self.assertEqual(env["ITERM2_COOKIE"], "fresh")
+        self.assertEqual(env["ITERM2_KEY"], "k")
+        self.assertEqual(env["OTHER"], "kept")
+        self.assertEqual(argv[1:], updater.sys.argv)
+
+    def test_exec_failure_runs_on_failure(self) -> None:
+        on_failure = mock.MagicMock()
+        with self.assertLogs(updater.log, "ERROR"):
+            self._run_restart(mock.MagicMock(side_effect=OSError("boom")), on_failure)
+        on_failure.assert_called_once()
 
 
 def _git(root: Path, *args: str) -> str:
