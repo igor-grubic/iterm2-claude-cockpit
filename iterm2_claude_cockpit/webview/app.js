@@ -17,6 +17,21 @@
   const ACTIVE_FALLBACK = "#4ea1ff";
   const SLEEP_COLOR = "#777f88";
 
+  // A working pane swaps its left dot/mark for a spinner. `p.busy` mirrors the pane's
+  // iTerm2 progress bar (OSC 9;4), the same signal behind the glowing tab outline.
+  const SPIN_MS = 900; // matches the .pane-spinner animation duration in styles.css
+  function renderSpinner(dim) {
+    const el = document.createElement("span");
+    el.className = "pane-spinner";
+    el.setAttribute("role", "img");
+    el.setAttribute("aria-label", "Working");
+    // A busy pane's snapshot changes constantly (its last line keeps moving), and every
+    // re-render would restart the spin. Phase-lock it to a shared clock instead.
+    el.style.animationDelay = `-${Math.round(performance.now() % SPIN_MS)}ms`;
+    if (dim) el.style.opacity = "0.35";
+    return el;
+  }
+
   // Per-theme color palette (index 0-5, cycled by clicking a swatch) plus the neutral/label/
   // title colors that go with it. Selectable in Settings; "1a" is the default.
   // Both palettes are ordered: red, green, yellow, purple, blue, brown.
@@ -493,10 +508,12 @@
       : (active ? rgba(groupColorHex || ACTIVE_FALLBACK, 0.32) : (groupColorHex ? rgba(groupColorHex, 0.06) : "transparent"));
     row.style.boxShadow = active && !dim ? `inset 0 0 0 2px ${rgba(groupColorHex || ACTIVE_FALLBACK, 0.8)}` : "none";
 
-    const marker = document.createElement("span");
-    marker.className = "pane-dot";
-    marker.style.background = "#5a616b";
-    marker.style.boxShadow = "0 0 0 5px rgba(90,97,107,0.16)";
+    const marker = p.busy ? renderSpinner(dim) : document.createElement("span");
+    if (!p.busy) {
+      marker.className = "pane-dot";
+      marker.style.background = "#5a616b";
+      marker.style.boxShadow = "0 0 0 5px rgba(90,97,107,0.16)";
+    }
 
     const main = document.createElement("div");
     main.className = "pane-main";
@@ -518,7 +535,7 @@
     });
 
     const children = [marker, main];
-    if (!isClaude) {
+    if (!isClaude && !p.busy) {
       const status = document.createElement("span");
       status.className = "pane-status";
       status.textContent = "idle";
@@ -616,10 +633,12 @@
       : (active ? rgba(groupColorHex || ACTIVE_FALLBACK, 0.34) : (groupColorHex ? rgba(groupColorHex, 0.06) : "transparent"));
     row.style.borderLeft = `3px solid ${dim ? "transparent" : (active ? (groupColorHex || ACTIVE_FALLBACK) : "transparent")}`;
 
-    const mark = document.createElement("span");
-    mark.className = "pane-mark";
-    mark.textContent = "·";
-    mark.style.color = th.none;
+    const mark = p.busy ? renderSpinner(dim) : document.createElement("span");
+    if (!p.busy) {
+      mark.className = "pane-mark";
+      mark.textContent = "·";
+      mark.style.color = th.none;
+    }
 
     const title = document.createElement("span");
     title.className = "pane-title-classic";

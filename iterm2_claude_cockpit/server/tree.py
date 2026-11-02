@@ -8,7 +8,7 @@ from pathlib import Path
 
 import iterm2
 
-from . import claude_detect, directories, links
+from . import claude_detect, directories, links, progress
 
 log = logging.getLogger("iterm2_claude_cockpit.tree")
 
@@ -80,6 +80,7 @@ async def _session_node(
     tty = await _get_var(session, "tty") or ""
     iterm_title = await _session_title(session)
     title = _path_label(cwd)
+    busy = progress.is_busy(await _get_var(session, progress.USER_VAR), job)
 
     return {
         "kind": "session",
@@ -92,6 +93,7 @@ async def _session_node(
         "cwd": cwd,
         "tty": tty,
         "claude": claude_detect.tty_base(tty) in claude_ttys,
+        "busy": busy,
     }
 
 

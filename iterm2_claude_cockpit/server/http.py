@@ -101,6 +101,10 @@ class State:
         self.suppress_refresh: bool = False
         # Latched by /api/update/apply so a double-click can't race the re-exec.
         self.update_in_flight: bool = False
+        # Pane progress spinner: whether this iTerm2 supports the progress-bar trigger
+        # (checked once, lazily), and the sessions already instrumented with it.
+        self._progress_supported: bool | None = None
+        self._progress_sessions: set[str] = set()
         # Workspace-state persistence: debounce bookkeeping (see refresh()).
         self._last_persist_ts: float = 0.0
         self._last_persisted_sig: str = ""
@@ -152,6 +156,34 @@ class State:
         with self.lock:
             self.snapshot = snap
         self._maybe_persist(snap, tab_names, tab_colors, tab_collapsed, tab_sleeping)
+        await self._ensure_progress_triggers()
+
+    async def _ensure_progress_triggers(self) -> None:
+        """Instrument each new pane once so its snapshot can report `busy` (see progress.py)."""
+        if self._progress_supported is None:
+            try:
+                self._progress_supported, version = await actions.progress_triggers_supported(self.app)
+            except Exception:
+                log.warning("could not read the iTerm2 version; pane progress spinner disabled", exc_info=True)
+                self._progress_supported = False
+            else:
+                if self._progress_supported:
+                    log.info("pane progress spinner enabled (iTerm2 %s)", version)
+                else:
+                    log.info("pane progress spinner needs iTerm2 3.7+ (found %r); disabled", version)
+        if not self._progress_supported:
+            return
+        sessions = {s.session_id: s for w in self.app.terminal_windows for t in w.tabs for s in t.sessions}
+        self._progress_sessions.intersection_update(sessions)
+        for session_id, session in sessions.items():
+            if session_id in self._progress_sessions:
+                continue
+            # Marked up front: one failed attempt is logged, not retried every second.
+            self._progress_sessions.add(session_id)
+            try:
+                await actions.ensure_progress_triggers(session)
+            except Exception:
+                log.warning("could not add progress triggers to pane %s", session_id, exc_info=True)
 
     def _maybe_persist(
         self,

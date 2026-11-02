@@ -35,6 +35,7 @@ The scene numbers match the badges in the GIF, in the same order. The walkthroug
 - Two selectable panel themes (Settings panel → Theme): **Classic**, the default, a JetBrains Mono terminal-styled look, and **Modern**, a softer redesigned alternative. The choice persists across restarts
 - Filter groups by color: click a color chip in the window header; other groups dim but stay visible
 - Claude panes stand out at a glance with a yellow pane title — detected via the pane's TTY, so it works for the Node-based install too
+- Working panes show a spinner instead of their status dot, driven by the same progress signal as iTerm2's glowing "working" tab outline (iTerm2 3.7+)
 - Auto-discovered link chips on group headers — every URL in a workspace status file becomes a labeled chip that opens in your browser (arrays open a popup of all their links); see [Group link chips](#group-link-chips) below
 - Hover a pane for a tooltip with its job, working directory, and last output line
 - Rename tabs inline (✎ button next to the name) or programmatically via `POST /api/rename-tab`; custom names persist until the tab or window is closed
@@ -212,6 +213,14 @@ The fix cannot invent paths or custom titles that were already absent from all s
 ### A directory lookup is rejected as ambiguous or unavailable
 
 The daemon logs and ignores system lookup results when the directory cannot be verified or `lsof` uses ambiguous control-character notation (such as `^A`, which can also be literal filename text). It retains the last known directory for that same pane rather than guessing. Install iTerm2's shell integration (`iTerm2 > Install Shell Integration`) so iTerm2 can report paths directly; if the current directory was deleted, move into an existing directory.
+
+---
+
+### A pane is working but shows no spinner
+
+- **iTerm2 older than 3.7:** the spinner relies on "Progress Bar Changed" triggers added in 3.7. The console logs `pane progress spinner disabled` at startup.
+- **The program doesn't show a progress bar:** the spinner mirrors iTerm2's own "working" tab glow (OSC 9;4). If that tab doesn't glow, there's nothing to mirror. In Claude Code, check that `terminalProgressBarEnabled` isn't turned off in `/config`.
+- **The pane was already busy when the daemon started:** the triggers only see changes, so the spinner appears from that pane's next task onward.
 
 ---
 

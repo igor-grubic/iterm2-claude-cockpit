@@ -57,6 +57,8 @@
   --clr-close:     #e05555;
   /* Fixed regardless of theme/group color — mirrors app.js's CLAUDE_YELLOW constant. */
   --clr-claude:    #f6c177;
+  /* The pane "working" spinner — the green of iTerm2's progress-bar tab glow. */
+  --clr-working:   #5fd38d;
 
   /* buttons */
   --btn-bg:     #21252b;
@@ -494,6 +496,27 @@ button.pane-path-btn {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── "working" spinner — replaces the pane dot/mark while the pane's agent is busy ── */
+.pane-spinner {
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(95, 211, 141, 0.22); /* --clr-working, faded */
+  border-top-color: var(--clr-working);
+  /* duration mirrors SPIN_MS in app.js, which phase-locks it across re-renders */
+  animation: pane-spin 900ms linear infinite;
+}
+/* the classic mark column is only 8px wide */
+.pane-row-classic .pane-spinner { width: 8px; height: 8px; border-width: 1.5px; }
+
+@keyframes pane-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pane-spinner { animation: none; border-color: var(--clr-working); }
 }
 
 /* ── confirm popup ──────────────────────────────────────────────── */

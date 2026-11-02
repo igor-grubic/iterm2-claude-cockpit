@@ -9,10 +9,33 @@ from urllib.parse import urlparse
 
 import iterm2
 
-from . import directories
+from . import directories, progress
 
 if TYPE_CHECKING:
     from .http import State
+
+
+async def progress_triggers_supported(app: iterm2.App) -> tuple[bool, str]:
+    """Whether the running iTerm2 supports the progress-bar event trigger, and its version."""
+    bundle_path = await app.async_get_variable("appBundlePath")
+    version = progress.app_version(bundle_path) if isinstance(bundle_path, str) else ""
+    return progress.supports_triggers(version), version
+
+
+async def ensure_progress_triggers(session: iterm2.Session) -> None:
+    """Add the triggers that mirror the pane's progress bar into `user.cockpitProgress`.
+
+    Session-local (a LocalWriteOnlyProfile), so saved profiles are never touched.
+    Idempotent: the triggers live on the session, so after a daemon restart they're
+    already there and this only reads the profile.
+    """
+    profile = await session.async_get_profile()
+    merged = progress.merge_triggers(profile.triggers)
+    if merged is None:
+        return
+    local = iterm2.LocalWriteOnlyProfile()
+    local.set_triggers(merged)
+    await session.async_set_profile_properties(local)
 
 
 def open_url(url: str) -> dict:
