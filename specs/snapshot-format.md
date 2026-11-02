@@ -88,7 +88,8 @@ The links are resolved per group from the working directories of its panes: the 
   "last_line": "-- INSERT --",
   "cwd": "/Users/igor/code/myrepo",
   "tty": "/dev/ttys003",
-  "claude": false
+  "claude": false,
+  "busy": false
 }
 ```
 
@@ -104,6 +105,7 @@ The links are resolved per group from the working directories of its panes: the 
 | `cwd` | string | iTerm2-reported working directory; when unavailable, the foreground process directory or last known directory for this same session. Empty only if all are unknown |
 | `tty` | string | Controlling TTY path (e.g. `/dev/ttys003`), empty if unknown |
 | `claude` | boolean | Whether a `claude`/`claude-code` process is attached to this pane's TTY (detected via `ps`). `true` even when the foreground `job` is `node`, since the npm/Node install runs Claude under Node. `false` if undetectable |
+| `busy` | boolean | Whether the pane's program is showing a terminal progress bar (OSC 9;4), the same signal behind iTerm2's glowing "working" tab outline, which Claude Code and Copilot CLI emit while they work. Mirrored into the `user.cockpitProgress` session variable by session-local triggers the daemon installs (iTerm2 3.7+). Always `false` when the foreground `job` is a shell, so an agent killed mid-task can't leave a stale value, and on older iTerm2 |
 
 ## Invariants
 
